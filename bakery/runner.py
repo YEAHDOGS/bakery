@@ -20,6 +20,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -462,6 +463,62 @@ def kill(run_id: str) -> None:
     meta["finished_at"] = _now()
     _save_meta(run_id, meta)
     print(f"killed {len(killed)} agents in run {run_id}: {', '.join(killed) or 'none'}")
+
+
+def _agent_failed(st: dict) -> bool:
+    """True unless the agent finished cleanly: done with exit code 0.
+
+    Nonzero exits, timeouts, kills, and unknown/supervisor-died states all
+    count as failed — any of them is worth a second attempt.
+    """
+    return not (st["state"] == "done" and st["exit_code"] == 0)
+
+
+def retry(run_id: str, new_run_id: str | None = None) -> str | None:
+    """Re-run only the agents of `run_id` that did not succeed.
+
+    The retry is a FRESH run (new run id, own run dir) holding a filtered
+    copy of the finished run's frozen recipe.toml, so a bad retry never
+    clobbers the original run's evidence; the new meta records `retry_of`
+    and `retried_agents` for the audit trail. The retried run goes through
+    the same preflights as a normal run (recipe validation, config load,
+    secret-env rejection) because it boots through start_run.
+
+    Returns the new run id, or None when every agent already succeeded
+    (no run is created in that case). Refuses a run that hasn't finished —
+    the supervisor still owns those agents, and two supervisors writing
+    one meta.json would race.
+    """
+    from . import report as _report  # local import: report.py imports this module
+
+    meta = _load_meta(run_id)  # SystemExit("unknown run ...") when missing
+    recipe = load_recipe(str(runs_root() / run_id / "recipe.toml"))
+    if meta["status"] not in TERMINAL_STATES:
+        raise SystemExit(
+            f"run '{run_id}' is still {meta['status']}; retry only after it finishes"
+        )
+    failed = [a.name for a in recipe.agents if _agent_failed(meta["agents"][a.name])]
+    if not failed:
+        print(f"run {run_id}: nothing to retry — every agent succeeded")
+        return None
+    failed_set = set(failed)
+    text = _report.emit_recipe_toml(recipe, [a for a in recipe.agents if a.name in failed_set])
+    fd, tmp_path = tempfile.mkstemp(suffix=".toml", prefix="bakery-retry-")
+    try:
+        os.write(fd, text.encode("utf-8"))
+        os.close(fd)
+        new_id = start_run(tmp_path, new_run_id)
+    finally:
+        os.unlink(tmp_path)
+    meta2 = _load_meta(new_id)
+    meta2["retry_of"] = run_id
+    meta2["retried_agents"] = failed
+    _save_meta(new_id, meta2)
+    print(
+        f"retrying {len(failed)}/{len(recipe.agents)} agents from run {run_id} "
+        f"as {new_id}: {', '.join(failed)}"
+    )
+    return new_id
 
 
 def list_runs() -> None:

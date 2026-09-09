@@ -128,6 +128,13 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("run_id")
     p.set_defaults(fn=lambda a: runner.kill(a.run_id))
 
+    p = sub.add_parser(
+        "retry",
+        help="re-run only the agents of a finished run that did not succeed",
+    )
+    p.add_argument("run_id")
+    p.set_defaults(fn=lambda a: runner.retry(a.run_id))
+
     p = sub.add_parser("collect", help="merge a run's outputs into one report")
     p.add_argument("run_id")
     p.add_argument(
