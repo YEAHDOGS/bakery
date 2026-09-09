@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import signal
 import subprocess
 import sys
@@ -77,11 +76,16 @@ def start_run(recipe_path: str, run_id: str | None = None) -> str:
     recipe = load_recipe(recipe_path)
     guard_recipe(recipe)  # refuse to bake a run that hands secrets to agents
     run_id = run_id or new_run_id()
+    return _launch_run(recipe, run_id, Path(recipe_path).read_text(), None)
+
+
+def _launch_run(recipe: Recipe, run_id: str, recipe_text: str, retried_from: str | None) -> str:
+    """Create a run dir from an in-memory recipe and detach its supervisor."""
     run_dir = runs_root() / run_id
     if run_dir.exists():
         raise SystemExit(f"run '{run_id}' already exists")
     (run_dir / "agents").mkdir(parents=True)
-    shutil.copy(recipe_path, run_dir / "recipe.toml")
+    (run_dir / "recipe.toml").write_text(recipe_text)
 
     meta = {
         "run_id": run_id,
@@ -89,6 +93,7 @@ def start_run(recipe_path: str, run_id: str | None = None) -> str:
         "status": "starting",
         "started_at": _now(),
         "finished_at": None,
+        "retried_from": retried_from,
         "agents": {
             a.name: {
                 "pid": None,
@@ -263,6 +268,82 @@ def kill(run_id: str) -> None:
     meta["finished_at"] = _now()
     _save_meta(run_id, meta)
     print(f"killed {len(killed)} agents in run {run_id}: {', '.join(killed) or 'none'}")
+
+
+def _agent_needs_retry(st: dict) -> bool:
+    """Failed (non-zero exit) or timed-out agents get retried; everything
+    else — done cleanly, killed deliberately, still running/pending — does not."""
+    if st["state"] == "timeout":
+        return True
+    return st["state"] == "done" and st["exit_code"] not in (0, None)
+
+
+def _toml_escape(s: str) -> str:
+    return (
+        '"'
+        + s.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\t", "\\t")
+        + '"'
+    )
+
+
+def _dump_recipe_toml(recipe: Recipe, agents: list) -> str:
+    """Serialize a recipe (or a subset of its agents) back to TOML.
+
+    `bake retry` bakes a *filtered* recipe, so it needs a writer, not just the
+    tomllib reader. The schema here mirrors recipe.py's loader exactly.
+    """
+    lines = [
+        "[bakery]",
+        f"name = {_toml_escape(recipe.name)}",
+        f"backend = {_toml_escape(recipe.backend)}",
+        f"max_parallel = {recipe.max_parallel}",
+        "",
+    ]
+    for a in agents:
+        lines += [
+            "[[agents]]",
+            f"name = {_toml_escape(a.name)}",
+            "cmd = [" + ", ".join(_toml_escape(c) for c in a.cmd) + "]",
+            f"timeout = {a.timeout}",
+            f"workdir = {_toml_escape(a.workdir)}",
+            "env = {"
+            + ", ".join(f"{_toml_escape(k)} = {_toml_escape(v)}" for k, v in a.env.items())
+            + "}",
+            "",
+        ]
+    return "\n".join(lines)
+
+
+def retry_run(run_id: str) -> str | None:
+    """Re-run only the failed/timed-out agents of a finished run.
+
+    Bakes a new run `<run-id>-retry<N>` from the run's frozen recipe, filtered
+    to the retryable agents. Returns the new run id, or None when there is
+    nothing to retry (agents that succeeded keep their results; a retry never
+    rewrites the original run).
+    """
+    meta = _load_meta(run_id)
+    if meta["status"] in ("running", "starting"):
+        raise SystemExit(
+            f"run '{run_id}' is still {meta['status']} — wait for it to finish before retrying"
+        )
+    recipe = load_recipe(str(runs_root() / run_id / "recipe.toml"))
+    retry_agents = [a for a in recipe.agents if _agent_needs_retry(meta["agents"][a.name])]
+    if not retry_agents:
+        print(f"nothing to retry in run '{run_id}': no failed or timed-out agents")
+        return None
+    guard_recipe(Recipe(recipe.name, recipe.backend, recipe.max_parallel, retry_agents))
+    n = 1
+    while (runs_root() / f"{run_id}-retry{n}").exists():
+        n += 1
+    new_id = f"{run_id}-retry{n}"
+    sub_recipe = Recipe(recipe.name, recipe.backend, recipe.max_parallel, retry_agents)
+    new_id = _launch_run(sub_recipe, new_id, _dump_recipe_toml(recipe, retry_agents), run_id)
+    print(f"retrying {len(retry_agents)} of {len(recipe.agents)} agents from run '{run_id}'")
+    return new_id
 
 
 def list_runs() -> None:

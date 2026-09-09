@@ -40,6 +40,9 @@ python -m bakery collect <run-id> --format markdown
 # one command: fan out, wait, merge a *sanitized* report, deliver
 python -m bakery report .bakery/tasks/hello.toml --out report.md
 
+# retry just the failures of a finished run (new <run-id>-retryN run)
+python -m bakery retry <run-id>
+
 # kill a runaway swarm
 python -m bakery kill <run-id>
 ```
@@ -100,7 +103,7 @@ The CLI is a thin orchestrator over the `shell` backend today. Backends are plug
 
 ## Roadmap
 
-Short-term: recipe validation errors with line numbers, `--watch` streaming status, retry-on-failure. Shipped: JSON output mode for scripting (`bake status --format json`, `bake collect --format json`; the JSON collect embeds sanitized agent output). Longer-term: real agent backends and a web dashboard. Full list in `docs/ROADMAP.md`.
+Short-term: recipe validation errors with line numbers, `--watch` streaming status. Shipped: JSON output mode for scripting (`bake status --format json`, `bake collect --format json`; the JSON collect embeds sanitized agent output), and `bake retry <run-id>` — re-runs only the failed/timed-out agents of a finished run as a new `<run-id>-retry<N>` run. Longer-term: real agent backends and a web dashboard. Full list in `docs/ROADMAP.md`.
 
 ## Security
 
