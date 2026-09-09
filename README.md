@@ -106,6 +106,38 @@ recipe.toml ──▶ bake run ──▶ .bakery/runs/<id>/
 
 The CLI is a thin orchestrator over pluggable backends — see `docs/ARCHITECTURE.md` for the interface a new backend (Claude API agent, SSH worker, Docker container) needs to implement.
 
+## Merging structured reports (`--format json`)
+
+`bake merge` also merges JSON reports *by finding*, not just by section —
+the dedupe/provenance/disagreement layer the endgame needs:
+
+```bash
+./bake merge --format json kite.json claude.json gemini.json -o merged.json
+```
+
+Each input is one agent's structured report:
+
+```json
+{"agent": "kite", "summary": "one-liner (optional)",
+ "findings": [{"title": "...", "severity": "info|low|medium|high|critical",
+               "detail": "...", "location": "...", "recommendation": "...",
+               "key": "optional explicit dedupe id"}]}
+```
+
+A `bake collect --format json` document is accepted directly too (each
+agent's stdout is parsed as the above; agents that didn't finish cleanly
+are flagged `partial`).
+
+The merged doc dedupes identical findings by a stable key (explicit `key`
+when given, else a hash of normalized title + detail), records every
+reporting agent in `reported_by`, and **never silently drops a
+disagreement**: if agents claim different severities, the most severe wins
+and the dissent is recorded under `disagreements` with full per-agent
+`evidence` preserved. Every string in the output is sanitized and
+secret-redacted, so credential-shaped values can never leak into the
+merged report. Malformed inputs fail with a one-line error, not a
+traceback.
+
 ## Security
 
 Agents are untrusted workers. Bakery enforces: **scrubbed environments** (agents never inherit the operator's credentials — secret-named env keys are stripped, secret-looking recipe env keys are rejected), **secret redaction** on every log byte before it hits disk, and **sanitize-at-merge** against cross-agent prompt injection. Full threat model in `docs/THREAT-MODEL.md`.
