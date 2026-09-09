@@ -16,6 +16,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from .redact import redact
+
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 _CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
@@ -38,7 +40,7 @@ def merge_reports(paths: list[str]) -> str:
         raise SystemExit("merge: need at least one report file")
     parts = ["# Merged report", ""]
     for path in paths:
-        body = sanitize(_read_report(path)).rstrip()
+        body = redact(sanitize(_read_report(path))).rstrip()
         parts.append(f"## Report: `{path}`")
         parts.append("")
         parts.append(body if body else "_empty report_")

@@ -20,6 +20,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -27,6 +28,7 @@ from pathlib import Path
 
 from .adapters import get as get_adapter
 from .recipe import Recipe, load_recipe
+from .redact import redact
 
 
 def runs_root() -> Path:
@@ -54,6 +56,35 @@ def _load_meta(run_id: str) -> dict:
 
 def _save_meta(run_id: str, meta: dict) -> None:
     _meta_path(run_id).write_text(json.dumps(meta, indent=2))
+
+
+def _redacting_writer(path: Path):
+    """Write-agent output to `path` with secrets redacted line by line.
+
+    Returns (file_obj, stop). Agent output flows: child -> pipe -> daemon
+    pump thread -> redact() -> log file. `stop()` closes the write end and
+    waits for the pump to drain, so the log file is complete before the
+    agent is marked finished.
+    """
+    rfd, wfd = os.pipe()
+    write_end = os.fdopen(wfd, "w")
+
+    def pump() -> None:
+        with os.fdopen(rfd, "r", errors="replace") as src, open(path, "w") as dst:
+            for line in src:
+                dst.write(redact(line))
+
+    thread = threading.Thread(target=pump, name=f"redact-{path.name}", daemon=True)
+    thread.start()
+
+    def stop() -> None:
+        try:
+            write_end.close()
+        except OSError:
+            pass
+        thread.join(timeout=5)
+
+    return write_end, stop
 
 
 def _update_agent(run_id: str, name: str, **fields) -> dict:
@@ -123,19 +154,26 @@ def _supervise(run_id: str) -> None:
     _save_meta(run_id, meta)
 
     pending = list(recipe.agents)
-    running: dict[str, subprocess.Popen] = {}
+    # running: name -> (proc, [stop_stream, ...]); stops drain the redacting pumps
+    running: dict[str, tuple[subprocess.Popen, list]] = {}
+
+    def stop_streams(name: str) -> None:
+        entry = running.pop(name, None)
+        if entry:
+            for stop in entry[1]:
+                stop()
 
     def launch(agent) -> None:
         adapter = get_adapter(recipe.backend)
-        out = open(run_dir / "agents" / f"{agent.name}.out", "w")
-        err = open(run_dir / "agents" / f"{agent.name}.err", "w")
+        out, out_stop = _redacting_writer(run_dir / "agents" / f"{agent.name}.out")
+        err, err_stop = _redacting_writer(run_dir / "agents" / f"{agent.name}.err")
         try:
             proc = adapter.spawn(agent, stdout=out, stderr=err, env=agent.env)
         except Exception:
-            out.close()
-            err.close()
+            out_stop()
+            err_stop()
             raise
-        running[agent.name] = proc
+        running[agent.name] = (proc, [out_stop, err_stop])
         _update_agent(
             run_id,
             agent.name,
@@ -147,6 +185,7 @@ def _supervise(run_id: str) -> None:
         print(f"[{_now()}] launched {agent.name} pid={proc.pid}", flush=True)
 
     def finish(name: str, state: str, code: int | None) -> None:
+        stop_streams(name)  # flush redacted logs to disk before recording outcome
         meta = _load_meta(run_id)
         if meta["agents"][name]["state"] == "killed":
             return  # `bake kill` already recorded the outcome; don't clobber it
@@ -166,12 +205,11 @@ def _supervise(run_id: str) -> None:
             while pending and len(running) < recipe.max_parallel:
                 launch(pending.pop(0))
             time.sleep(1)
-            for name, proc in list(running.items()):
+            for name, (proc, _stops) in list(running.items()):
                 agent = by_name[name]
                 rc = proc.poll()
                 if rc is not None:
                     finish(name, "done", rc)
-                    del running[name]
                     continue
                 fresh = _load_meta(run_id)["agents"][name]
                 t0 = datetime.fromisoformat(fresh["started_at"])
@@ -183,7 +221,6 @@ def _supervise(run_id: str) -> None:
                         pass
                     proc.wait()
                     finish(name, "timeout", -1)
-                    del running[name]
     finally:
         meta = _load_meta(run_id)
         if meta["status"] == "running":
