@@ -58,8 +58,29 @@ _RULES: list[tuple[re.Pattern, str | object]] = [
 ]
 
 
+_EXTRA_RULES: list[tuple[re.Pattern, str]] = []
+_EXTRA_SOURCES: set[str] = set()  # pattern strings already registered
+
+
+def register_extra(patterns: list[str]) -> None:
+    """Add config-file secret patterns (deduped); they run after _RULES."""
+    for p in patterns:
+        if p in _EXTRA_SOURCES:
+            continue
+        _EXTRA_RULES.append((re.compile(p), REDACTED))
+        _EXTRA_SOURCES.add(p)
+
+
+def clear_extra() -> None:
+    """Drop all registered extra patterns (tests only)."""
+    _EXTRA_RULES.clear()
+    _EXTRA_SOURCES.clear()
+
+
 def redact(text: str) -> str:
     """Return `text` with recognized secret shapes replaced."""
     for pattern, repl in _RULES:
+        text = pattern.sub(repl, text)
+    for pattern, repl in _EXTRA_RULES:
         text = pattern.sub(repl, text)
     return text
