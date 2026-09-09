@@ -20,6 +20,8 @@ from __future__ import annotations
 import tomllib
 from dataclasses import dataclass, field
 
+from . import adapters
+
 
 @dataclass
 class AgentSpec:
@@ -54,6 +56,11 @@ def load_recipe(path: str) -> Recipe:
     if not raw_agents:
         raise ValueError(f"recipe {path}: no [[agents]] defined")
 
+    try:
+        adapter = adapters.get(backend)
+    except ValueError as e:
+        raise ValueError(f"recipe {path}: {e}")
+
     agents: list[AgentSpec] = []
     seen: set[str] = set()
     for i, raw in enumerate(raw_agents):
@@ -64,17 +71,18 @@ def load_recipe(path: str) -> Recipe:
         if aname in seen:
             raise ValueError(f"recipe {path}: duplicate agent name '{aname}'")
         seen.add(aname)
-        if backend == "shell" and (not cmd or not isinstance(cmd, list)):
-            raise ValueError(f"recipe {path}: agent '{aname}' needs cmd = [...] for shell backend")
-        agents.append(
-            AgentSpec(
-                name=aname,
-                cmd=list(cmd) if cmd else [],
-                timeout=int(raw.get("timeout", 3600)),
-                workdir=str(raw.get("workdir", ".")),
-                env=dict(raw.get("env", {})),
-            )
+        spec = AgentSpec(
+            name=aname,
+            cmd=list(cmd) if cmd else [],
+            timeout=int(raw.get("timeout", 3600)),
+            workdir=str(raw.get("workdir", ".")),
+            env=dict(raw.get("env", {})),
         )
+        try:
+            adapter.validate(spec)
+        except ValueError as e:
+            raise ValueError(f"recipe {path}: {e}")
+        agents.append(spec)
 
     return Recipe(
         name=name,

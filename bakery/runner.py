@@ -25,6 +25,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .adapters import get as get_adapter
 from .recipe import Recipe, load_recipe
 
 
@@ -125,18 +126,15 @@ def _supervise(run_id: str) -> None:
     running: dict[str, subprocess.Popen] = {}
 
     def launch(agent) -> None:
-        env = os.environ.copy()
-        env.update({k: str(v) for k, v in agent.env.items()})
+        adapter = get_adapter(recipe.backend)
         out = open(run_dir / "agents" / f"{agent.name}.out", "w")
         err = open(run_dir / "agents" / f"{agent.name}.err", "w")
-        proc = subprocess.Popen(
-            agent.cmd,
-            stdout=out,
-            stderr=err,
-            cwd=agent.workdir,
-            env=env,
-            start_new_session=True,
-        )
+        try:
+            proc = adapter.spawn(agent, stdout=out, stderr=err, env=agent.env)
+        except Exception:
+            out.close()
+            err.close()
+            raise
         running[agent.name] = proc
         _update_agent(
             run_id,
