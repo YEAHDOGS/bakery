@@ -29,6 +29,7 @@ from pathlib import Path
 from .adapters import get as get_adapter
 from .recipe import Recipe, load_recipe
 from .redact import redact
+from .sandbox import sandbox_env
 
 
 def runs_root() -> Path:
@@ -105,6 +106,10 @@ def _pid_alive(pid: int) -> bool:
 
 def start_run(recipe_path: str, run_id: str | None = None) -> str:
     recipe = load_recipe(recipe_path)
+    # Sandbox preflight: reject secret-bearing recipe env BEFORE the
+    # supervisor detaches, so the user sees the error instead of a dead run.
+    for agent in recipe.agents:
+        sandbox_env(agent.env)
     run_id = run_id or new_run_id()
     run_dir = runs_root() / run_id
     if run_dir.exists():
@@ -168,7 +173,9 @@ def _supervise(run_id: str) -> None:
         out, out_stop = _redacting_writer(run_dir / "agents" / f"{agent.name}.out")
         err, err_stop = _redacting_writer(run_dir / "agents" / f"{agent.name}.err")
         try:
-            proc = adapter.spawn(agent, stdout=out, stderr=err, env=agent.env)
+            # sandbox: the agent gets a scrubbed allowlist environment —
+            # inherited credentials are stripped before spawn.
+            proc = adapter.spawn(agent, stdout=out, stderr=err, env=sandbox_env(agent.env))
         except Exception:
             out_stop()
             err_stop()
