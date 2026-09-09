@@ -34,14 +34,20 @@ def _read_report(path: str) -> str:
     return p.read_text(errors="replace")
 
 
-def merge_reports(paths: list[str]) -> str:
-    """Return one markdown doc concatenating the report files, in order."""
+def merge_reports(paths: list[str], names: list[str] | None = None) -> str:
+    """Return one markdown doc concatenating the report files, in order.
+
+    `names` optionally overrides the per-section label (defaults to the path).
+    """
     if not paths:
         raise SystemExit("merge: need at least one report file")
+    if names and len(names) != len(paths):
+        raise SystemExit("merge: names length must match paths length")
     parts = ["# Merged report", ""]
-    for path in paths:
+    for i, path in enumerate(paths):
+        label = names[i] if names else path
         body = redact(sanitize(_read_report(path))).rstrip()
-        parts.append(f"## Report: `{path}`")
+        parts.append(f"## Report: `{label}`")
         parts.append("")
         parts.append(body if body else "_empty report_")
         parts.append("")
