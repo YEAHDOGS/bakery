@@ -72,6 +72,15 @@ The CLI is a thin orchestrator over the `shell` backend today. Backends are plug
 
 Short-term: recipe validation errors with line numbers, `--watch` streaming status, JSON output mode for scripting, retry-on-failure. Longer-term: real agent backends and a web dashboard. Full list in `docs/ROADMAP.md`.
 
+## Security
+
+- **Pre-flight secret guard.** `bake run` refuses a recipe that hands a
+  secret-looking value (API tokens, private keys, `*_SECRET`-style env vars
+  with real values) to an agent — it fails loudly before any agent spawns.
+  Placeholders like `changeme` or `${API_KEY}` never trip it. If a task needs
+  a credential, the supervisor injects it at the narrowest scope; it never
+  goes in the recipe.
+
 ## License
 
 MIT — see `LICENSE`.
