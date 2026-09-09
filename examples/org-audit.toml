@@ -1,0 +1,33 @@
+# The parallel-audit pattern: N independent analyzers, one aggregated report.
+#
+# Each agent analyzes one repo and prints a structured report to stdout.
+# When the swarm finishes, `bake collect <run-id>` merges every agent's
+# output into a single markdown report -- that's the "coordinator compile" step.
+#
+# Usage:
+#   python -m bakery run org-audit.toml
+#   python -m bakery status <run-id>        # watch it converge
+#   python -m bakery collect <run-id> > audit-report.md
+
+[bakery]
+name = "org-audit"
+backend = "shell"
+max_parallel = 7
+
+[[agents]]
+name = "repo-bakery"
+cmd = ["bash", "-lc", "analyze-repo \"$REPO\""]
+env = { REPO = "bakery" }
+timeout = 1800
+
+[[agents]]
+name = "repo-phoenix"
+cmd = ["bash", "-lc", "analyze-repo \"$REPO\""]
+env = { REPO = "phoenix" }
+timeout = 1800
+
+[[agents]]
+name = "repo-castle"
+cmd = ["bash", "-lc", "analyze-repo \"$REPO\""]
+env = { REPO = "castle" }
+timeout = 1800

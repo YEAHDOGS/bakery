@@ -1,0 +1,28 @@
+# Roadmap
+
+## Quick wins (small, high value)
+
+- [ ] `bake run --watch` — stream status until the run finishes, instead of
+      polling `status` by hand.
+- [ ] `--format json` on `status` and `collect` for scripting.
+- [ ] Recipe validation errors that name the file, section, and agent index
+      (already done at the Python level; surface them cleanly in the CLI).
+- [ ] `bake retry <run-id>` — re-run only agents that failed or timed out.
+- [ ] `bake clean` — prune old run directories, keeping the last N.
+- [ ] Agent `depends_on` — run the aggregation agent only after the swarm
+      finishes (the org-audit "coordinator compile" step as a first-class agent).
+- [ ] Timeout granularity: warn (SIGTERM) a few seconds before SIGKILL.
+
+## Bigger bets
+
+- [ ] **Claude backend** — agents that are real model calls: prompt template
+      in, transcript out, with per-agent token/cost accounting in `collect`.
+- [ ] **Swarm resume** — re-attach a supervisor to an existing run id after
+      a crash instead of leaving agents orphaned.
+- [ ] **Web dashboard** — tail agent logs in a browser; Brandon checks things
+      on his phone, so this should be phone-first.
+- [ ] **Recipe includes** — compose recipes from shared fragments
+      (e.g. one fragment per repo in the org).
+- [ ] **Dry run** — `bake plan` prints the launch waves without spawning.
+- [ ] SSH and Docker backends for running swarms across machines (Castle
+      nodes would be a natural fit).
