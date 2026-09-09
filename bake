@@ -1,0 +1,12 @@
+#!/bin/sh
+# `bake` — the one command. Fans a mission out to the agents, collects their
+# reports, merges them into a single document.
+#
+# Resolves the bakery package from this script's own directory, so it runs
+# from any cwd with no install step (stdlib only, per default-deny).
+#
+#   ./bake report examples/multi-ai-report.toml -o /tmp/report.md
+#   ./bake report --task "audit the org" --agents kite,claude,gemini -o r.md
+set -eu
+BAKE_HOME="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+PYTHONPATH="$BAKE_HOME${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m bakery "$@"
