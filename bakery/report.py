@@ -20,6 +20,7 @@ neutralizes all three:
 
 from __future__ import annotations
 
+import json
 import re
 import time
 from pathlib import Path
@@ -122,6 +123,70 @@ def wait_for_run(run_id: str, timeout: float, poll_s: float = 1.0) -> dict:
         if time.time() >= deadline:
             raise TimeoutError(f"run '{run_id}' did not finish within {timeout:.0f}s")
         time.sleep(poll_s)
+
+
+def render_collect(run_id: str, fmt: str = "markdown") -> str:
+    """Render a run's collected outputs as a string.
+
+    The ``json`` format is new for scripting (VISION.md: orchestration
+    plumbing; roadmap "JSON output mode"). Unlike the legacy markdown/text
+    formats — kept byte-for-byte compatible for downstream consumers —
+    the JSON payload embeds sanitized agent output, because agent output
+    is untrusted and a machine reader shouldn't inherit raw fences,
+    control characters, or echoed credentials either.
+    """
+    meta = runner._load_meta(run_id)
+    if fmt == "json":
+        agents: dict[str, dict] = {}
+        for name, st in meta["agents"].items():
+            agents[name] = {
+                "state": st.get("state"),
+                "exit_code": st.get("exit_code"),
+                "duration_s": st.get("duration_s"),
+                "out": sanitize_output(_agent_text(runner, run_id, name, "out")),
+                "err": sanitize_output(_agent_text(runner, run_id, name, "err")),
+            }
+        doc = {
+            "run_id": meta.get("run_id"),
+            "recipe": meta.get("recipe"),
+            "status": meta.get("status"),
+            "started_at": meta.get("started_at"),
+            "finished_at": meta.get("finished_at"),
+            "agents": agents,
+        }
+        return json.dumps(doc, indent=2) + "\n"
+    agents_dir = runner.runs_root() / run_id / "agents"
+    if fmt == "markdown":
+        lines = [
+            f"# Run report: {meta['recipe']} (`{run_id}`)",
+            "",
+            f"status: **{meta['status']}** · started {meta['started_at']}",
+        ]
+        for name, st in meta["agents"].items():
+            dur = f"{st['duration_s']}s" if st["duration_s"] is not None else "?"
+            lines += ["", f"## {name} — {st['state']} (exit {st['exit_code']}, {dur})"]
+            out = (
+                (agents_dir / f"{name}.out").read_text(errors="replace")
+                if (agents_dir / f"{name}.out").exists()
+                else ""
+            )
+            err = (
+                (agents_dir / f"{name}.err").read_text(errors="replace")
+                if (agents_dir / f"{name}.err").exists()
+                else ""
+            )
+            if out.strip():
+                lines += ["", "```", out.rstrip(), "```"]
+            if err.strip():
+                lines += ["", "_stderr:_", "", "```", err.rstrip(), "```"]
+        return "\n".join(lines) + "\n"
+    lines = []
+    for name, st in meta["agents"].items():
+        lines.append(f"=== {name} [{st['state']}] ===")
+        p = agents_dir / f"{name}.out"
+        if p.exists():
+            lines.append(p.read_text(errors="replace").rstrip())
+    return "\n".join(lines) + "\n"
 
 
 def bake_report(

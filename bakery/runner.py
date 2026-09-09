@@ -210,18 +210,28 @@ def refresh_status(meta: dict) -> dict:
     return meta
 
 
-def status(run_id: str) -> None:
+def render_status(run_id: str, fmt: str = "text") -> str:
+    """Render a run's status as a string (text table or JSON for scripting)."""
     meta = _load_meta(run_id)
     before = json.dumps(meta["agents"], sort_keys=True)
     meta = refresh_status(meta)
     if json.dumps(meta["agents"], sort_keys=True) != before:
         _save_meta(run_id, meta)
-    print(f"run {meta['run_id']}  recipe={meta['recipe']}  status={meta['status']}")
-    print(f"{'agent':<24}{'state':<10}{'exit':<6}{'duration':<10}{'pid'}")
+    if fmt == "json":
+        return json.dumps(meta, indent=2, sort_keys=True) + "\n"
+    lines = [
+        f"run {meta['run_id']}  recipe={meta['recipe']}  status={meta['status']}",
+        f"{'agent':<24}{'state':<10}{'exit':<6}{'duration':<10}{'pid'}",
+    ]
     for name, st in meta["agents"].items():
         dur = f"{st['duration_s']}s" if st["duration_s"] is not None else "-"
         code = str(st["exit_code"]) if st["exit_code"] is not None else "-"
-        print(f"{name:<24}{st['state']:<10}{code:<6}{dur:<10}{st['pid'] or '-'}")
+        lines.append(f"{name:<24}{st['state']:<10}{code:<6}{dur:<10}{st['pid'] or '-'}")
+    return "\n".join(lines) + "\n"
+
+
+def status(run_id: str, fmt: str = "text") -> None:
+    print(render_status(run_id, fmt), end="")
 
 
 def logs(run_id: str, agent: str, stream: str = "out", tail: int = 0) -> None:
@@ -273,24 +283,7 @@ def list_runs() -> None:
 
 
 def collect(run_id: str, fmt: str = "markdown") -> None:
-    run_dir = runs_root() / run_id
-    meta = _load_meta(run_id)
-    agents_dir = run_dir / "agents"
-    if fmt == "markdown":
-        print(f"# Run report: {meta['recipe']} (`{run_id}`)")
-        print(f"\nstatus: **{meta['status']}** · started {meta['started_at']}")
-        for name, st in meta["agents"].items():
-            dur = f"{st['duration_s']}s" if st["duration_s"] is not None else "?"
-            print(f"\n## {name} — {st['state']} (exit {st['exit_code']}, {dur})")
-            out = (agents_dir / f"{name}.out").read_text(errors="replace") if (agents_dir / f"{name}.out").exists() else ""
-            err = (agents_dir / f"{name}.err").read_text(errors="replace") if (agents_dir / f"{name}.err").exists() else ""
-            if out.strip():
-                print("\n```\n" + out.rstrip() + "\n```")
-            if err.strip():
-                print("\n_stderr:_\n\n```\n" + err.rstrip() + "\n```")
-    else:
-        for name, st in meta["agents"].items():
-            print(f"=== {name} [{st['state']}] ===")
-            p = agents_dir / f"{name}.out"
-            if p.exists():
-                print(p.read_text(errors="replace").rstrip())
+    # Imported here: bakery.report imports this module at its top level.
+    from . import report as _report
+
+    print(_report.render_collect(run_id, fmt), end="")

@@ -100,7 +100,7 @@ The CLI is a thin orchestrator over the `shell` backend today. Backends are plug
 
 ## Roadmap
 
-Short-term: recipe validation errors with line numbers, `--watch` streaming status, JSON output mode for scripting, retry-on-failure. Longer-term: real agent backends and a web dashboard. Full list in `docs/ROADMAP.md`.
+Short-term: recipe validation errors with line numbers, `--watch` streaming status, retry-on-failure. Shipped: JSON output mode for scripting (`bake status --format json`, `bake collect --format json`; the JSON collect embeds sanitized agent output). Longer-term: real agent backends and a web dashboard. Full list in `docs/ROADMAP.md`.
 
 ## Security
 
