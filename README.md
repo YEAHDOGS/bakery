@@ -55,6 +55,41 @@ timeout = 600
 
 See `examples/` for runnable recipes, including `org-audit.toml` — the parallel-audit pattern: N analyzers plus an aggregation step.
 
+## Per-run configuration (`bake.yaml`)
+
+Timeouts, retries, merge strategy, and extra secret patterns live in `bake.yaml`,
+resolved at `./bake.yaml` (the directory you run from), then
+`~/.config/bake/config.yaml`. No config file = built-in defaults; an invalid
+file or any **unknown key fails loudly** — a typo aborts the run instead of
+silently misconfiguring the fan-out.
+
+```bash
+./bake init --config   # writes a commented starter bake.yaml
+```
+
+```yaml
+timeout: 600                 # default per-agent timeout, seconds
+retries: 1                   # extra attempts after a timeout (0 = give up)
+merge_strategy: concat       # concat | digest (outcome lines + first 20 lines)
+redact:                      # extra secret regexes, on top of built-ins
+  - 'internal-key-[A-Za-z0-9]{24}'
+
+agents:                      # per-agent overrides, keyed by recipe agent name
+  slow-auditor:
+    timeout: 1800
+    retries: 2
+```
+
+Timeout precedence: config agent override → recipe agent `timeout` (when set
+explicitly) → config global `timeout` → 3600s default. Note: `bake report
+--timeout` is the *waiter* deadline (max seconds to wait for the whole swarm);
+it never changes per-agent timeouts. Timed-out agents relaunch from scratch up
+to their retry budget; partial output stays flagged **PARTIAL** in the merged
+report, and every run records the resolved params in `meta.json` (`"config"`).
+
+Config parsing needs PyYAML (present on the machine); with no `bake.yaml`
+around, bakery stays stdlib-only.
+
 ## Architecture
 
 ```

@@ -3,7 +3,8 @@
 # reports, merges them into a single document.
 #
 # Resolves the bakery package from this script's own directory, so it runs
-# from any cwd with no install step (stdlib only, per default-deny).
+# from any cwd with no install step. Core is stdlib-only; bake.yaml config
+# parsing uses PyYAML, and only when a bake.yaml is present.
 #
 #   ./bake report examples/multi-ai-report.toml -o /tmp/report.md
 #   ./bake report --task "audit the org" --agents kite,claude,gemini -o r.md
