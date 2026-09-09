@@ -17,7 +17,9 @@
 - [ ] `bake clean` — prune old run directories, keeping the last N.
 - [ ] Agent `depends_on` — run the aggregation agent only after the swarm
       finishes (the org-audit "coordinator compile" step as a first-class agent).
-- [ ] Timeout granularity: warn (SIGTERM) a few seconds before SIGKILL.
+- [x] Timeout granularity: SIGTERM + a short grace period before
+      SIGKILL, so cooperative agents flush final output and keep their
+      real exit code (see `_terminate` in `bakery/runner.py`).
 
 ## Bigger bets
 
