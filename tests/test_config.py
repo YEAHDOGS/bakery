@@ -88,8 +88,10 @@ class LoudFailureTest(unittest.TestCase):
 
 class PrecedenceTest(unittest.TestCase):
     def test_cli_flag_wins(self):
+        # --timeout is the waiter's deadline, never a per-agent timeout:
+        # it must not move agent resolution at all.
         cfg = parse_config("timeout: 600\nagents:\n  a:\n    timeout: 900\n")
-        self.assertEqual(cfg.timeout_for("a", 60, True, cli_timeout=10), 10)
+        self.assertEqual(cfg.timeout_for("a", 60, True), 900)
 
     def test_agent_override_beats_recipe_and_global(self):
         cfg = parse_config("timeout: 600\nagents:\n  a:\n    timeout: 900\n")
@@ -195,3 +197,161 @@ class RedactHookTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class IsolatedCwdTest(unittest.TestCase):
+    """chdir + HOME isolation so bake.yaml discovery can't leak between tests."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.old_cwd = os.getcwd()
+        self.old_home = os.environ.get("HOME")
+        self.old_bake = os.environ.pop("BAKE_CONFIG", None)
+        os.environ["HOME"] = str(self.tmp)
+        os.chdir(self.tmp)
+        from bakery import redact
+
+        redact.clear_extra()
+
+    def tearDown(self):
+        os.chdir(self.old_cwd)
+        if self.old_home is not None:
+            os.environ["HOME"] = self.old_home
+        else:
+            os.environ.pop("HOME", None)
+        if self.old_bake is not None:
+            os.environ["BAKE_CONFIG"] = self.old_bake
+        else:
+            os.environ.pop("BAKE_CONFIG", None)
+        from bakery import redact
+
+        redact.clear_extra()
+
+    def _recipe(self, path: str = "r.toml", timeout_line: str = "") -> str:
+        p = self.tmp / path
+        p.write_text(
+            '[bakery]\nname = "cfg-e2e"\nbackend = "fixture"\nmax_parallel = 2\n\n'
+            '[[agents]]\nname = "slow"\ndelay = 5\n'
+            f'report = "# slow report\\n"\n{timeout_line}'
+        )
+        return str(p)
+
+
+class ConfigTimeoutE2ETest(IsolatedCwdTest):
+    """Config timeouts/retries honored through the full bake-report path."""
+
+    def test_config_global_timeout_honored(self):
+        (self.tmp / "bake.yaml").write_text("timeout: 2\n")
+        import json
+
+        from bakery import report, runner
+
+        out = report.bake_report(self._recipe(), output=str(self.tmp / "m.md"))
+        run_dirs = [d for d in runner.runs_root().iterdir() if d.is_dir()]
+        self.assertEqual(len(run_dirs), 1)
+        meta = json.loads((run_dirs[0] / "meta.json").read_text())
+        st = meta["agents"]["slow"]
+        self.assertEqual(st["state"], "timeout")  # 2s config beat the 5s fixture
+        self.assertEqual(st["attempts"], 1)       # no retries configured
+        self.assertEqual(meta["config"]["params"]["slow"]["timeout"], 2)
+        self.assertTrue(Path(out).is_file())
+
+    def test_config_retry_relaunches_timed_out_agent(self):
+        (self.tmp / "bake.yaml").write_text("timeout: 2\nretries: 1\n")
+        import json
+
+        from bakery import report, runner
+
+        report.bake_report(self._recipe(), output=str(self.tmp / "m.md"))
+        run_dirs = [d for d in runner.runs_root().iterdir() if d.is_dir()]
+        meta = json.loads((run_dirs[0] / "meta.json").read_text())
+        st = meta["agents"]["slow"]
+        self.assertEqual(st["state"], "timeout")
+        self.assertEqual(st["attempts"], 2)  # first attempt + one retry
+        self.assertEqual(meta["config"]["params"]["slow"]["retries"], 1)
+
+    def test_per_agent_timeout_override(self):
+        # agent override (30s) beats the config global (2s); the 5s fixture
+        # finishes cleanly under it. --timeout stays the waiter deadline and
+        # does not touch per-agent timeouts.
+        (self.tmp / "bake.yaml").write_text(
+            "timeout: 2\nagents:\n  slow:\n    timeout: 30\n"
+        )
+        import json
+
+        from bakery import report, runner
+
+        report.bake_report(self._recipe(), output=str(self.tmp / "m.md"), timeout=60)
+        run_dirs = [d for d in runner.runs_root().iterdir() if d.is_dir()]
+        meta = json.loads((run_dirs[0] / "meta.json").read_text())
+        self.assertEqual(meta["agents"]["slow"]["state"], "done")
+        self.assertEqual(meta["config"]["params"]["slow"]["timeout"], 30)
+
+
+class ConfigMergeStrategyTest(IsolatedCwdTest):
+    def test_digest_strategy_in_report(self):
+        (self.tmp / "bake.yaml").write_text("merge_strategy: digest\n")
+        body = "".join(f"line {i}\n" for i in range(40))
+        p = self.tmp / "r.toml"
+        p.write_text(
+            '[bakery]\nname = "digest-e2e"\nbackend = "fixture"\nmax_parallel = 1\n\n'
+            '[[agents]]\nname = "a"\ndelay = 0\nreport = """\n' + body + '"""\n'
+        )
+        from bakery import report
+
+        out = report.bake_report(str(p), output=str(self.tmp / "m.md"))
+        doc = Path(out).read_text()
+        self.assertIn("truncated", doc)
+        self.assertIn("line 0", doc)
+        self.assertNotIn("line 39", doc)
+
+    def test_unknown_strategy_is_loud(self):
+        from bakery import merge
+
+        with self.assertRaises(ValueError):
+            merge.merge_reports([], strategy="smart")
+
+
+class ConfigRedactE2ETest(IsolatedCwdTest):
+    def test_extra_redact_pattern_scrubs_merged_report(self):
+        (self.tmp / "bake.yaml").write_text(
+            "redact:\n  - 'internal-key-[A-Za-z0-9]{8}'\n"
+        )
+        p = self.tmp / "r.toml"
+        p.write_text(
+            '[bakery]\nname = "redact-e2e"\nbackend = "fixture"\nmax_parallel = 1\n\n'
+            '[[agents]]\nname = "a"\ndelay = 0\n'
+            'report = "deploy with internal-key-ABCDEFGH now"\n'
+        )
+        from bakery import report
+
+        out = report.bake_report(str(p), output=str(self.tmp / "m.md"))
+        doc = Path(out).read_text()
+        self.assertNotIn("internal-key-ABCDEFGH", doc)
+        self.assertIn("[REDACTED]", doc)
+
+
+class InitConfigTest(IsolatedCwdTest):
+    def test_init_config_writes_valid_starter(self):
+        from bakery.__main__ import main
+
+        main(["init", "--config"])
+        dest = self.tmp / "bake.yaml"
+        self.assertTrue(dest.is_file())
+        cfg = parse_config(dest.read_text(), source=str(dest))
+        self.assertEqual(cfg.timeout, 600)
+        self.assertEqual(cfg.agents["slow-auditor"].timeout, 1800)
+
+    def test_init_recipe_still_default(self):
+        from bakery.__main__ import main
+
+        main(["init"])
+        self.assertTrue((self.tmp / "hello.toml").is_file())
+        self.assertFalse((self.tmp / "bake.yaml").exists())
+
+    def test_init_config_refuses_to_overwrite(self):
+        (self.tmp / "bake.yaml").write_text("timeout: 1\n")
+        from bakery.__main__ import main
+
+        with self.assertRaises(SystemExit):
+            main(["init", "--config"])

@@ -21,6 +21,9 @@ from .redact import redact
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 _CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
+STRATEGIES = ("concat", "digest")
+_DIGEST_LINES = 20
+
 
 def sanitize(text: str) -> str:
     """Strip ANSI escapes and stray control chars; keep tabs/newlines."""
@@ -78,6 +81,7 @@ def merge_reports(
     paths: list[str],
     names: list[str] | None = None,
     statuses: dict[str, dict] | None = None,
+    strategy: str = "concat",
 ) -> str:
     """Return one markdown doc concatenating the report files, in order.
 
@@ -86,7 +90,11 @@ def merge_reports(
     (state / exit_code / duration_s); every section then carries its outcome
     and timed-out/killed agents are flagged as PARTIAL, so a dead agent's
     truncated output can never pass silently as a complete report.
+    `strategy` is `concat` (full per-agent sections) or `digest` (outcome
+    lines + first 20 lines of each report, with a truncation note).
     """
+    if strategy not in STRATEGIES:
+        raise ValueError(f"merge: unknown strategy {strategy!r} (valid: {STRATEGIES})")
     if not paths:
         raise SystemExit("merge: need at least one report file")
     if names and len(names) != len(paths):
@@ -107,14 +115,32 @@ def merge_reports(
             parts.append("")
             parts.append(status_line)
         parts.append("")
-        parts.append(body if body else "_empty report_")
+        if strategy == "digest":
+            lines = body.splitlines() if body else []
+            kept = lines[:_DIGEST_LINES]
+            parts.append("\n".join(kept) if kept else "_empty report_")
+            if len(lines) > _DIGEST_LINES:
+                parts.append("")
+                parts.append(
+                    f"_… truncated: {len(lines) - _DIGEST_LINES} more lines "
+                    "in the full report_"
+                )
+        else:
+            parts.append(body if body else "_empty report_")
         parts.append("")
     return "\n".join(parts).rstrip() + "\n"
 
 
-def write_merged(paths: list[str], out: str | None) -> str:
-    """Merge the reports, printing to stdout or writing to `out`; return doc."""
-    doc = merge_reports(paths)
+def write_merged(paths: list[str], out: str | None, strategy: str | None = None) -> str:
+    """Merge the reports, printing to stdout or writing to `out`; return doc.
+
+    `strategy=None` reads the default from bake.yaml (concat when absent).
+    """
+    from .config import apply_redact, load_config
+
+    cfg = load_config()
+    apply_redact(cfg)
+    doc = merge_reports(paths, strategy=strategy or cfg.merge_strategy)
     if out:
         Path(out).write_text(doc)
         print(f"merged {len(paths)} report(s) -> {out}")
