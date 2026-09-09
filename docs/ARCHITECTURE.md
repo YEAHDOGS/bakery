@@ -26,22 +26,23 @@ recipe.toml ──▶ bake run ──▶ supervisor (detached) ──▶ N agent
 - **Recipe** (`recipe.py`) — TOML in, validated `Recipe` out. TOML was chosen
   because it's stdlib-parseable (Python 3.11+) and human-friendly.
 
-## Backend interface
+## Backend interface (`bakery/adapters.py`)
 
-Only the `shell` backend exists today. A backend needs to provide:
+Only the `shell` adapter exists today. Every backend implements the `Adapter`
+contract — subclass, set `name`, call `register()`:
 
 | Operation | Meaning |
 |---|---|
-| `spawn(agent) -> handle` | start one agent, return an opaque handle |
-| `poll(handle) -> state` | `running` / `done(exit_code)` |
-| `stop(handle)` | terminate the agent and its children |
-| `capture_paths(handle)` | where stdout/stderr/exit code live |
+| `validate(spec)` | raise `ValueError` if this agent spec can't run on this backend |
+| `spawn(spec, *, stdout, stderr, env) -> Popen` | start one agent, return its process handle. `stdout`/`stderr` are open writable file objects owned by the caller — never close them. |
 
-The `shell` backend implements this with `subprocess.Popen(...,
-start_new_session=True)` so each agent owns a process group — `killpg`
-reliably kills the agent and everything it spawned. Candidates for future
-backends: a Claude API agent (prompt in, transcript out), SSH workers, Docker
-containers. Each would live in `bakery/backend_<name>.py` behind this table.
+The recipe loader resolves the backend through the adapter registry and fails
+fast on unknown backends, naming the valid ones. Everything else — timeouts,
+process-group kills, log files, `meta.json` — stays in the supervisor, so a
+future Claude/Gemini API adapter only needs to implement spawn (prompt in,
+transcript out) behind the same `bake run`/`bake collect` UX. The `shell`
+adapter uses `subprocess.Popen(..., start_new_session=True)` so each agent
+owns a process group and `killpg` reliably kills the agent and its children.
 
 ## Concurrency and race notes
 
