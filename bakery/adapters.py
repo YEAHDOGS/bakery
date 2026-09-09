@@ -20,11 +20,15 @@ Contract::
 The caller owns everything else: timeouts, process-group kills, log files,
 and meta.json bookkeeping. Adapters never touch credentials beyond what the
 caller passes them in `env`.
+
+SECURITY: the caller composes `env` via `bakery.sandbox.sandbox_env()`, which
+strips the supervisor's credentials out of the inherited environment. The
+adapter MUST use `env` as the child's complete environment — it must NOT
+merge in `os.environ` itself, or the sandbox guarantee breaks.
 """
 
 from __future__ import annotations
 
-import os
 import subprocess
 
 
@@ -52,14 +56,14 @@ class ShellAdapter(Adapter):
             raise ValueError(f"agent '{spec.name}' needs cmd = [...] for shell backend")
 
     def spawn(self, spec, *, stdout, stderr, env) -> subprocess.Popen:
-        full_env = os.environ.copy()
-        full_env.update({k: str(v) for k, v in env.items()})
+        # `env` is already the sandboxed, complete environment (see module
+        # docstring): use it as-is, never merge in os.environ.
         return subprocess.Popen(
             spec.cmd,
             stdout=stdout,
             stderr=stderr,
             cwd=spec.workdir,
-            env=full_env,
+            env={k: str(v) for k, v in env.items()},
             start_new_session=True,  # agent owns a process group: killpg is reliable
         )
 
