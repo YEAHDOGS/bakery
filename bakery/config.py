@@ -22,11 +22,13 @@ fan-out config must never silently misconfigure a run). Per-agent keys are
 per-agent sections) or `digest` (outcome lines + truncated bodies).
 
 Timeout precedence, highest first:
-    1. `bake report --timeout` CLI flag
-    2. config `agents.<name>.timeout`
-    3. recipe agent `timeout` (when the recipe sets it explicitly)
-    4. config global `timeout`
-    5. 3600s built-in default
+    1. config `agents.<name>.timeout`
+    2. recipe agent `timeout` (when the recipe sets it explicitly)
+    3. config global `timeout`
+    4. 3600s built-in default
+
+(`bake report --timeout` is the *waiter* deadline — max seconds to wait for
+the whole swarm — not a per-agent timeout; it never changes agent timeouts.)
 
 Retry precedence: config `agents.<name>.retries` > config global `retries`
 > 0. Retries are extra attempts *after* the first timeout of that agent.
@@ -65,11 +67,8 @@ class Config:
     agents: dict[str, AgentConfig] = field(default_factory=dict)
     source: str = "<defaults>"          # which file produced this, for logs
 
-    def timeout_for(self, name: str, recipe_timeout: float, recipe_timeout_set: bool,
-                    cli_timeout: float | None = None) -> float:
+    def timeout_for(self, name: str, recipe_timeout: float, recipe_timeout_set: bool) -> float:
         """Resolve one agent's effective timeout (see module docstring)."""
-        if cli_timeout is not None:
-            return cli_timeout
         override = self.agents.get(name)
         if override and override.timeout is not None:
             return override.timeout
