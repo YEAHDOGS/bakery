@@ -35,6 +35,8 @@ The endgame (see `VISION.md`): **one command fans work out to Kite, Claude, and 
 ./bake collect <run-id> --format json > run.json   # one machine-readable doc for scripting
 ./bake status <run-id> --format json               # text (default) or json snapshot
 ./bake kill <run-id>             # kill a runaway swarm
+./bake retry <run-id>            # re-run only the agents that failed, timed out, or were killed
+                                 # (fresh run, fresh run id; the original run's logs are untouched)
 ```
 
 `./bake` is a tiny shim that finds the package from its own directory — works from any cwd, no install.
