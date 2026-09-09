@@ -25,6 +25,10 @@ recipe.toml ──▶ bake run ──▶ supervisor (detached) ──▶ N agent
   `agents/` logs, so plain tools (`cat`, `jq`, `tail -f`) work on a live run.
 - **Recipe** (`recipe.py`) — TOML in, validated `Recipe` out. TOML was chosen
   because it's stdlib-parseable (Python 3.11+) and human-friendly.
+- **Secret redaction** (`redact.py`) — agent stdout/stderr is pumped through
+  `redact()` line by line before it hits the log files, so tokens, `key=value`
+  secrets, and PEM blocks land as `[REDACTED]`, never on disk. `bake merge`
+  redacts report bodies too (reports are untrusted cross-agent input).
 
 ## Backend interface (`bakery/adapters.py`)
 
