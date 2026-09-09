@@ -49,6 +49,22 @@ def cmd_init(args) -> None:
     print("bake it off with: python -m bakery run", dest)
 
 
+def cmd_run(args) -> None:
+    run_id = runner.start_run(args.recipe, args.run_id)
+    if args.watch:
+        _check_watched(run_id, args.timeout)
+
+
+def _check_watched(run_id: str, timeout: float | None) -> None:
+    meta = runner.watch(run_id, timeout=timeout)
+    if meta["status"] == "killed":
+        raise SystemExit(2)
+
+
+def cmd_watch(args) -> None:
+    _check_watched(args.run_id, args.timeout)
+
+
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(prog="bakery", description="parallel swarm management")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -65,7 +81,28 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("run", help="bake off a swarm from a recipe (returns immediately)")
     p.add_argument("recipe", help="recipe TOML file")
     p.add_argument("--id", dest="run_id", default=None, help="run id (default: generated)")
-    p.set_defaults(fn=lambda a: runner.start_run(a.recipe, a.run_id))
+    p.add_argument(
+        "--watch",
+        action="store_true",
+        help="stream status until the run finishes instead of returning immediately",
+    )
+    p.add_argument(
+        "--timeout",
+        type=float,
+        default=None,
+        help="with --watch: max seconds to wait before giving up",
+    )
+    p.set_defaults(fn=lambda a: cmd_run(a))
+
+    p = sub.add_parser("watch", help="stream a run's status until it finishes")
+    p.add_argument("run_id")
+    p.add_argument(
+        "--timeout",
+        type=float,
+        default=None,
+        help="max seconds to wait before giving up",
+    )
+    p.set_defaults(fn=lambda a: cmd_watch(a))
 
     p = sub.add_parser("list", help="list runs")
     p.set_defaults(fn=lambda a: runner.list_runs())

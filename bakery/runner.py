@@ -45,6 +45,10 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+# Run states a watcher can stop on: the detached supervisor has finished
+# bookkeeping. "killed" is terminal too (`bake kill` records it).
+TERMINAL_STATES = {"done", "killed"}
+
 # Seconds an over-time agent gets to shut itself down (SIGTERM) before the
 # supervisor escalates to SIGKILL. Cooperative agents flush their final
 # output and exit with their real code; only stuck agents die hard. The
@@ -357,6 +361,44 @@ def status(run_id: str) -> None:
         dur = f"{st['duration_s']}s" if st["duration_s"] is not None else "-"
         code = str(st["exit_code"]) if st["exit_code"] is not None else "-"
         print(f"{name:<24}{st['state']:<10}{code:<6}{dur:<10}{st['pid'] or '-'}")
+
+
+def _summary_line(meta: dict) -> str:
+    """One-line swarm state snapshot, e.g. `running 1/3 done (a1:running a2:done a3:pending)`."""
+    agents = meta["agents"]
+    n_done = sum(1 for s in agents.values() if s["state"] == "done")
+    states = " ".join(f"{n}:{s['state']}" for n, s in agents.items())
+    return f"{meta['status']} {n_done}/{len(agents)} done ({states})"
+
+
+def watch(run_id: str, poll: float = 1.0, timeout: float | None = None) -> dict:
+    """Stream a run's status to stdout until it reaches a terminal state.
+
+    Prints a one-line snapshot whenever the swarm state changes, then a
+    final line. Returns the final meta. Raises TimeoutError past `timeout`
+    seconds and RuntimeError if the supervisor dies mid-run — a stuck
+    "starting"/"running" meta would otherwise block forever.
+    """
+    deadline = time.monotonic() + timeout if timeout else None
+    last = None
+    while True:
+        meta = _load_meta(run_id)
+        if meta["status"] in TERMINAL_STATES:
+            print(f"run {run_id} finished: {_summary_line(meta)}", flush=True)
+            return meta
+        sup_pid = meta.get("supervisor_pid")
+        if sup_pid and not _pid_alive(sup_pid):
+            raise RuntimeError(
+                f"run '{run_id}': supervisor (pid {sup_pid}) died; "
+                f"see .bakery/runs/{run_id}/supervisor.log"
+            )
+        if deadline is not None and time.monotonic() > deadline:
+            raise TimeoutError(f"run '{run_id}' did not finish within {timeout}s")
+        line = _summary_line(meta)
+        if line != last:
+            print(f"{_now()} run {run_id}: {line}", flush=True)
+            last = line
+        time.sleep(poll)
 
 
 def logs(run_id: str, agent: str, stream: str = "out", tail: int = 0) -> None:
