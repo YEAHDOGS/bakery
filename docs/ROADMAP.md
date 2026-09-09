@@ -32,6 +32,10 @@
 - [x] Timeout granularity: SIGTERM + a short grace period before
       SIGKILL, so cooperative agents flush final output and keep their
       real exit code (see `_terminate` in `bakery/runner.py`).
+- [x] `bake plan` worst-case wall-time estimate — text (`~1h`, per-wave)
+      and JSON (`worst_case_wall_s` / `worst_case_wave_s`) upper bounds:
+      every attempt burns its full timeout, FIFO list-scheduled onto
+      `max_parallel` slots, retries included. (tests/test_plan.py)
 
 ## Bigger bets
 

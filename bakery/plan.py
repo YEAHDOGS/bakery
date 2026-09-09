@@ -2,7 +2,9 @@
 
 Shows what `bake run` / `bake report` WOULD do for a recipe: the effective
 per-agent timeouts/retries (bake.yaml overrides resolved), the launch waves
-(FIFO batches of `max_parallel`), and the sandbox verdict for each agent.
+(FIFO batches of `max_parallel`), a worst-case wall-clock estimate (every
+attempt at full timeout, retries included), and the sandbox verdict for
+each agent.
 Runs the same preflights as a real run (recipe validation, config load,
 secret-env rejection) so a plan that prints cleanly is a recipe that will
 actually bake off. Spawns nothing, writes nothing, touches no run dirs.
@@ -97,6 +99,50 @@ def _cmd_str(cmd: list[str]) -> str:
     return " ".join(cmd) if cmd else "(fixture report)"
 
 
+def _fmt_dur(seconds: int) -> str:
+    """Human-readable duration: 45s, 2m 30s, 1h 5m, 3d 2h (drops zero units)."""
+    seconds = int(seconds)
+    if seconds < 60:
+        return f"{seconds}s"
+    minutes, sec = divmod(seconds, 60)
+    if minutes < 60:
+        return f"{minutes}m {sec}s" if sec else f"{minutes}m"
+    hours, minutes = divmod(minutes, 60)
+    if hours < 24:
+        return f"{hours}h {minutes}m" if minutes else f"{hours}h"
+    days, hours = divmod(hours, 24)
+    return f"{days}d {hours}h" if hours else f"{days}d"
+
+
+def worst_case_wall(plan: Plan) -> dict:
+    """Worst-case wall-clock seconds for this plan.
+
+    Assumes every attempt of every agent burns its full timeout, scheduled
+    FIFO onto `max_parallel` slots with list scheduling (the supervisor
+    refills freed slots from the pending queue in FIFO order). A timed-out
+    agent relaunches from scratch in its own slot, so one agent's total
+    burn is `timeout * (1 + retries)` — retries ARE included.
+
+    Returns {"total_s": makespan, "per_wave_s": [per-wave bounds]}, where
+    each per-wave bound matches the strict FIFO-batch view that
+    plan.waves prints.
+    """
+    jobs = [a.timeout * (1 + a.retries) for a in plan.agents]
+    slots = max(1, plan.max_parallel)
+    free_at = [0] * slots
+    for burn in jobs:  # FIFO: next agent takes the earliest-free slot
+        earliest = min(range(slots), key=lambda s: free_at[s])
+        free_at[earliest] += burn
+    by_name = {a.name: a for a in plan.agents}
+    per_wave = [
+        max(by_name[n].timeout * (1 + by_name[n].retries) for n in wave)
+        if wave
+        else 0
+        for wave in plan.waves
+    ]
+    return {"total_s": max(free_at) if free_at else 0, "per_wave_s": per_wave}
+
+
 def render_text(plan: Plan) -> str:
     """Human-readable launch plan."""
     lines = [
@@ -123,13 +169,26 @@ def render_text(plan: Plan) -> str:
     lines += [
         "",
         f"launch waves: {len(plan.waves)} · total agents: {len(plan.agents)}",
+        _worst_case_line(plan),
         "nothing was spawned — `bake run` to execute this plan.",
     ]
     return "\n".join(lines)
 
 
+def _worst_case_line(plan: Plan) -> str:
+    """One-line worst-case wall-time estimate for the text render."""
+    wc = worst_case_wall(plan)
+    per_wave = ", ".join(_fmt_dur(w) for w in wc["per_wave_s"])
+    return (
+        f"worst-case wall time: ~{_fmt_dur(wc['total_s'])} "
+        f"(per wave: {per_wave}; every attempt at full timeout, "
+        "retries included)"
+    )
+
+
 def render_json(plan: Plan) -> str:
     """Machine-readable launch plan (env values never included)."""
+    wc = worst_case_wall(plan)
     doc = {
         "spawned": False,
         "recipe_name": plan.recipe_name,
@@ -139,6 +198,10 @@ def render_json(plan: Plan) -> str:
         "config_source": plan.config_source,
         "merge_strategy": plan.merge_strategy,
         "waves": plan.waves,
+        # seconds only: assumes every attempt burns its full timeout,
+        # retries included — an upper bound, not a prediction.
+        "worst_case_wall_s": wc["total_s"],
+        "worst_case_wave_s": wc["per_wave_s"],
         "agents": [
             {
                 "name": a.name,

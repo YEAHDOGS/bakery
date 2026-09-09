@@ -173,6 +173,59 @@ class BakePlanTest(unittest.TestCase):
                 plan.bake_plan(str(bad))
         self.assertIn("SECRET_KEY", str(cm.exception))
 
+    def test_worst_case_text_shown(self):
+        # RECIPE_TOML: a1=60s, a2=3600s, a3=120s, max_parallel=2, retries=0.
+        # FIFO slots: slot0=a1(60)+a3(120), slot1=a2(3600) -> total 3600s.
+        with isolated_tmp() as tmp:
+            recipe = self._recipe(tmp)
+            with captured() as out:
+                plan.bake_plan(recipe)
+        text = out.getvalue()
+        self.assertIn("worst-case wall time: ~1h", text)
+        self.assertIn("(per wave: 1h, 2m;", text)
+
+    def test_worst_case_json_fields(self):
+        with isolated_tmp() as tmp:
+            recipe = self._recipe(tmp)
+            with captured() as out:
+                plan.bake_plan(recipe, fmt="json")
+        doc = json.loads(out.getvalue())
+        self.assertEqual(doc["worst_case_wall_s"], 3600)
+        self.assertEqual(doc["worst_case_wave_s"], [3600, 120])
+
+    def test_worst_case_includes_retries(self):
+        # Unit-level: retries relaunch the agent in-place, so one agent's
+        # burn is timeout * (1 + retries).
+        agents = [
+            plan.AgentPlan(
+                name="r1", cmd=["echo"], workdir=".",
+                timeout=60, retries=1, env_keys=[], backend="shell",
+            ),
+            plan.AgentPlan(
+                name="r2", cmd=["echo"], workdir=".",
+                timeout=30, retries=2, env_keys=[], backend="shell",
+            ),
+        ]
+        p = plan.Plan(
+            recipe_name="t", recipe_path=None, backend="shell",
+            max_parallel=2, config_source="none", merge_strategy="x",
+            agents=agents, waves=[["r1", "r2"]],
+        )
+        wc = plan.worst_case_wall(p)
+        self.assertEqual(wc["total_s"], max(60 * 2, 30 * 3))  # 120
+        self.assertEqual(wc["per_wave_s"], [120])
+
+    def test_fmt_dur_boundaries(self):
+        f = plan._fmt_dur
+        self.assertEqual(f(0), "0s")
+        self.assertEqual(f(45), "45s")
+        self.assertEqual(f(60), "1m")
+        self.assertEqual(f(90), "1m 30s")
+        self.assertEqual(f(3600), "1h")
+        self.assertEqual(f(3661), "1h 1m")
+        self.assertEqual(f(86400), "1d")
+        self.assertEqual(f(90061), "1d 1h")
+
 
 if __name__ == "__main__":
     unittest.main()
