@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from . import merge, report, runner
+from .config import STARTER_CONFIG
 
 EXAMPLE_RECIPE = """\
 [bakery]
@@ -32,6 +33,14 @@ timeout = 60
 
 
 def cmd_init(args) -> None:
+    if args.config:
+        dest = Path(args.path if args.path != "hello.toml" else "bake.yaml")
+        if dest.exists():
+            raise SystemExit(f"{dest} already exists")
+        dest.write_text(STARTER_CONFIG)
+        print(f"wrote starter config to {dest}")
+        print("edit it, then: python -m bakery report recipe.toml")
+        return
     dest = Path(args.path)
     if dest.exists():
         raise SystemExit(f"{dest} already exists")
@@ -44,8 +53,13 @@ def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(prog="bakery", description="parallel swarm management")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    p = sub.add_parser("init", help="write an example recipe")
+    p = sub.add_parser("init", help="write an example recipe or starter config")
     p.add_argument("path", nargs="?", default="hello.toml")
+    p.add_argument(
+        "--config",
+        action="store_true",
+        help="write a commented starter bake.yaml instead of a recipe",
+    )
     p.set_defaults(fn=lambda a: cmd_init(a))
 
     p = sub.add_parser("run", help="bake off a swarm from a recipe (returns immediately)")

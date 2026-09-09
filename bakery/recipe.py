@@ -28,6 +28,7 @@ class AgentSpec:
     name: str
     cmd: list[str]
     timeout: int = 3600
+    timeout_set: bool = False  # True when the recipe set timeout explicitly
     workdir: str = "."
     env: dict = field(default_factory=dict)
     # fixture backend fields (canned report stand-ins, no live backends)
@@ -80,6 +81,7 @@ def load_recipe(path: str) -> Recipe:
             name=aname,
             cmd=list(cmd) if cmd else [],
             timeout=int(raw.get("timeout", 3600)),
+            timeout_set="timeout" in raw,
             workdir=str(raw.get("workdir", ".")),
             env=dict(raw.get("env", {})),
             report=str(raw.get("report", "")),

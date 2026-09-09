@@ -27,6 +27,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .adapters import get as get_adapter
+from .config import Config, load_config
 from .recipe import Recipe, load_recipe
 from .redact import redact
 from .sandbox import sandbox_env
@@ -104,8 +105,28 @@ def _pid_alive(pid: int) -> bool:
     return True
 
 
+def resolve_run_params(recipe: Recipe, cfg: Config) -> dict[str, dict]:
+    """Effective per-agent timeout/retries for a recipe under `cfg`.
+
+    Pure helper shared by start_run (records it in meta.json) and _supervise
+    (enforces it); both recompute from recipe + config so the frozen
+    recipe.toml stays the source of truth for everything else.
+    """
+    params = {}
+    for a in recipe.agents:
+        params[a.name] = {
+            "timeout": cfg.timeout_for(a.name, a.timeout, a.timeout_set),
+            "retries": cfg.retries_for(a.name),
+        }
+    return params
+
+
 def start_run(recipe_path: str, run_id: str | None = None) -> str:
     recipe = load_recipe(recipe_path)
+    # Config preflight: a broken bake.yaml fails HERE, before the supervisor
+    # detaches, instead of producing a silently misconfigured run.
+    cfg = load_config()
+    params = resolve_run_params(recipe, cfg)
     # Sandbox preflight: reject secret-bearing recipe env BEFORE the
     # supervisor detaches, so the user sees the error instead of a dead run.
     for agent in recipe.agents:
@@ -132,8 +153,15 @@ def start_run(recipe_path: str, run_id: str | None = None) -> str:
                 "started_at": None,
                 "finished_at": None,
                 "duration_s": None,
+                "attempts": 0,
             }
             for a in recipe.agents
+        },
+        # Audit trail: what bake.yaml (or its absence) resolved to per agent.
+        "config": {
+            "source": cfg.source,
+            "merge_strategy": cfg.merge_strategy,
+            "params": params,
         },
     }
     _save_meta(run_id, meta)
@@ -163,6 +191,14 @@ def _supervise(run_id: str) -> None:
     """Detached supervisor: launches agents in waves, enforces timeouts."""
     run_dir = runs_root() / run_id
     recipe = load_recipe(str(run_dir / "recipe.toml"))
+    # Config is read live at supervise start (cwd inherited from `bake run`
+    # / `bake report`), so the frozen recipe.toml never embeds config values;
+    # start_run already recorded the resolved params in meta.json for audit.
+    from .config import apply_redact
+
+    cfg = load_config()
+    apply_redact(cfg)
+    params = resolve_run_params(recipe, cfg)
     meta = _load_meta(run_id)
     meta["status"] = "running"
     _save_meta(run_id, meta)
@@ -190,6 +226,7 @@ def _supervise(run_id: str) -> None:
             err_stop()
             raise
         running[agent.name] = (proc, [out_stop, err_stop])
+        cur = _load_meta(run_id)["agents"][agent.name].get("attempts", 0)
         _update_agent(
             run_id,
             agent.name,
@@ -197,6 +234,7 @@ def _supervise(run_id: str) -> None:
             pgid=os.getpgid(proc.pid),
             state="running",
             started_at=_now(),
+            attempts=cur + 1,
         )
         print(f"[{_now()}] launched {agent.name} pid={proc.pid}", flush=True)
 
@@ -230,7 +268,26 @@ def _supervise(run_id: str) -> None:
                 fresh = _load_meta(run_id)["agents"][name]
                 t0 = datetime.fromisoformat(fresh["started_at"])
                 elapsed = (datetime.now(timezone.utc) - t0).total_seconds()
-                if elapsed > agent.timeout:
+                if elapsed > params[name]["timeout"]:
+                    retries_used = fresh.get("attempts", 1) - 1
+                    if retries_used < params[name]["retries"]:
+                        # Timeout, but the run still owes this agent attempts:
+                        # relaunch it from scratch (its partial output is
+                        # already on disk, flagged PARTIAL at merge time).
+                        print(
+                            f"[{_now()}] {name} timed out after "
+                            f"{params[name]['timeout']}s; retrying "
+                            f"(attempt {fresh.get('attempts', 1) + 1})",
+                            flush=True,
+                        )
+                        try:
+                            os.killpg(fresh["pgid"], signal.SIGKILL)
+                        except (ProcessLookupError, PermissionError):
+                            pass
+                        proc.wait()
+                        stop_streams(name)
+                        launch(by_name[name])
+                        continue
                     try:
                         os.killpg(fresh["pgid"], signal.SIGKILL)
                     except (ProcessLookupError, PermissionError):
@@ -319,6 +376,9 @@ def list_runs() -> None:
 
 
 def collect(run_id: str, fmt: str = "markdown") -> None:
+    from .config import apply_redact
+
+    apply_redact(load_config())
     run_dir = runs_root() / run_id
     meta = _load_meta(run_id)
     agents_dir = run_dir / "agents"

@@ -20,6 +20,7 @@ import time
 from pathlib import Path
 
 from . import merge, runner
+from .config import apply_redact, load_config
 from .recipe import Recipe, load_recipe
 
 TERMINAL_STATES = {"done", "killed"}
@@ -147,6 +148,18 @@ def bake_report(
     if not agents:
         raise ValueError("no agents selected")
 
+    # Per-run configuration: resolve timeouts (bake.yaml agent overrides,
+    # recipe explicit, bake.yaml global) and register extra redact patterns
+    # for the merge below. The resolved timeouts are baked into the frozen
+    # recipe so the detached supervisor enforces exactly what the waiter
+    # expects. NOTE: --timeout stays the waiter's deadline; it never changes
+    # agent timeouts.
+    cfg = load_config()
+    apply_redact(cfg)
+    for a in agents:
+        a.timeout = int(cfg.timeout_for(a.name, a.timeout, a.timeout_set))
+        a.timeout_set = True
+
     with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False) as f:
         f.write(emit_recipe_toml(recipe, agents))
         tmp_recipe = f.name
@@ -169,7 +182,9 @@ def bake_report(
             }
             for a in agents
         }
-        doc = merge.merge_reports(out_paths, names=labels, statuses=statuses)
+        doc = merge.merge_reports(
+            out_paths, names=labels, statuses=statuses, strategy=cfg.merge_strategy
+        )
         if output:
             Path(output).write_text(doc)
         else:
