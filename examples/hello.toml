@@ -1,0 +1,22 @@
+# Minimal swarm: three agents that just say hello.
+# Generate with: python -m bakery init
+
+[bakery]
+name = "hello-swarm"
+backend = "shell"
+max_parallel = 3
+
+[[agents]]
+name = "agent-1"
+cmd = ["bash", "-lc", "echo hello from agent 1; sleep 1; echo done"]
+timeout = 60
+
+[[agents]]
+name = "agent-2"
+cmd = ["bash", "-lc", "echo hello from agent 2; sleep 2; echo done"]
+timeout = 60
+
+[[agents]]
+name = "agent-3"
+cmd = ["bash", "-lc", "echo hello from agent 3; sleep 1; echo done"]
+timeout = 60
