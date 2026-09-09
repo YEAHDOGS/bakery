@@ -19,6 +19,10 @@ The endgame (see `VISION.md`): **one command fans work out to Kite, Claude, and 
 # THE one command: fan out a mission, wait, collect, merge — one document
 ./bake report examples/multi-ai-report.toml -o /tmp/report.md
 
+# dry run first: see the launch waves before anything spawns
+./bake plan examples/multi-ai-report.toml
+./bake plan --task "audit the org repos" --agents kite,claude,gemini --format json
+
 # or from a bare task (builds a labeled fixture-stub swarm, no recipe needed)
 ./bake report --task "audit the org repos" --agents kite,claude,gemini -o /tmp/report.md
 

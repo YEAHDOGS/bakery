@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import findings, merge, report, runner
+from . import findings, merge, plan, report, runner
 from .config import STARTER_CONFIG
 
 EXAMPLE_RECIPE = """\
@@ -177,6 +177,37 @@ def main(argv: list[str] | None = None) -> None:
             timeout=a.timeout,
         )
     )
+
+    p = sub.add_parser(
+        "plan",
+        help="dry run: print the launch plan without spawning anything",
+    )
+    p.add_argument("recipe", nargs="?", default=None, help="recipe TOML file (or use --task)")
+    p.add_argument("--task", default=None, help="bare task string; builds a fixture stub recipe")
+    p.add_argument("--agents", default=None, help="comma-separated agent names for --task")
+    p.add_argument("--only", default=None, help="plan only these recipe agents (comma-separated)")
+    p.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="text: human-readable waves; json: machine-readable plan document",
+    )
+
+    def _plan_dispatch(a):
+        # Recipe validation errors surface as one clean line ("plan: ..."),
+        # not a traceback — they already carry file, section, and agent index.
+        try:
+            plan.bake_plan(
+                a.recipe,
+                task=a.task,
+                agent_names=a.agents.split(",") if a.agents else None,
+                only_agents=a.only.split(",") if a.only else None,
+                fmt=a.format,
+            )
+        except ValueError as e:
+            raise SystemExit(f"plan: {e}")
+
+    p.set_defaults(fn=_plan_dispatch)
 
     p = sub.add_parser("_supervise", help=argparse.SUPPRESS)
     p.add_argument("run_id")
