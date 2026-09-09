@@ -100,3 +100,17 @@ def guard_recipe(recipe: Recipe) -> None:
         "if a task needs one, the supervisor injects it at the narrowest scope instead."
     )
     raise SystemExit("\n".join(lines))
+
+
+def redact_secrets(text: str) -> str:
+    """Redact secret-looking values from free text (logs, merged reports).
+
+    Cross-agent traffic is untrusted (VISION.md): an agent that echoes a
+    credential — its own or a leaked one — must not have that credential
+    land in a merged report or log verbatim. Each match is replaced with a
+    labelled placeholder naming the pattern kind.
+    """
+    redacted = text
+    for pattern, kind in _VALUE_PATTERNS:
+        redacted = pattern.sub(f"[redacted:{kind}]", redacted)
+    return redacted
