@@ -35,6 +35,7 @@ The endgame (see `VISION.md`): **one command fans work out to Kite, Claude, and 
 ./bake collect <run-id> --format json > run.json   # one machine-readable doc for scripting
 ./bake status <run-id> --format json               # text (default) or json snapshot
 ./bake kill <run-id>             # kill a runaway swarm
+./bake clean --keep 10         # prune old run dirs, keep the newest N (default 10)
 ./bake retry <run-id>            # re-run only the agents that failed, timed out, or were killed
                                  # (fresh run, fresh run id; the original run's logs are untouched)
 ```

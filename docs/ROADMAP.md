@@ -26,7 +26,9 @@
       Fresh run with a filtered copy of the frozen recipe; the original
       run's logs are untouched (`retry_of` recorded in the new meta).
       (tests/test_retry.py)
-- [ ] `bake clean` — prune old run directories, keeping the last N.
+- [x] `bake clean` — prune old run directories, keeping the last N
+      (`--keep`, default 10). Skips live runs and anything without a
+      meta.json. (tests/test_clean.py)
 - [ ] Agent `depends_on` — run the aggregation agent only after the swarm
       finishes (the org-audit "coordinator compile" step as a first-class agent).
 - [x] Timeout granularity: SIGTERM + a short grace period before
