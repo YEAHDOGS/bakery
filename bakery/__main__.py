@@ -109,7 +109,13 @@ def main(argv: list[str] | None = None) -> None:
 
     p = sub.add_parser("status", help="show agent states for a run")
     p.add_argument("run_id")
-    p.set_defaults(fn=lambda a: runner.status(a.run_id))
+    p.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="text: human-readable table; json: machine-readable snapshot",
+    )
+    p.set_defaults(fn=lambda a: runner.status(a.run_id, a.format))
 
     p = sub.add_parser("logs", help="print an agent's captured output")
     p.add_argument("run_id")
@@ -124,7 +130,12 @@ def main(argv: list[str] | None = None) -> None:
 
     p = sub.add_parser("collect", help="merge a run's outputs into one report")
     p.add_argument("run_id")
-    p.add_argument("--format", choices=["markdown", "text"], default="markdown")
+    p.add_argument(
+        "--format",
+        choices=["markdown", "text", "json"],
+        default="markdown",
+        help="json: one machine-readable doc with run metadata + per-agent output",
+    )
     p.set_defaults(fn=lambda a: runner.collect(a.run_id, a.format))
 
     p = sub.add_parser("merge", help="merge standalone report files into one document")

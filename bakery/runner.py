@@ -349,18 +349,50 @@ def refresh_status(meta: dict) -> dict:
     return meta
 
 
-def status(run_id: str) -> None:
+def status(run_id: str, fmt: str = "text") -> None:
     meta = _load_meta(run_id)
     before = json.dumps(meta["agents"], sort_keys=True)
     meta = refresh_status(meta)
     if json.dumps(meta["agents"], sort_keys=True) != before:
         _save_meta(run_id, meta)
+    if fmt == "json":
+        # Machine-readable swarm snapshot. meta.json is the supervisor's
+        # bookkeeping; agents themselves only contribute the whitelisted
+        # fields below (pid, pgid, attempt counts stay internal).
+        doc = {
+            "run_id": meta["run_id"],
+            "recipe": meta["recipe"],
+            "status": meta["status"],
+            "started_at": meta.get("started_at"),
+            "finished_at": meta.get("finished_at"),
+            "agents": {
+                name: {
+                    "state": st["state"],
+                    "exit_code": st["exit_code"],
+                    "duration_s": st["duration_s"],
+                }
+                for name, st in meta["agents"].items()
+            },
+        }
+        print(json.dumps(doc, indent=2, sort_keys=True))
+        return
     print(f"run {meta['run_id']}  recipe={meta['recipe']}  status={meta['status']}")
     print(f"{'agent':<24}{'state':<10}{'exit':<6}{'duration':<10}{'pid'}")
     for name, st in meta["agents"].items():
         dur = f"{st['duration_s']}s" if st["duration_s"] is not None else "-"
         code = str(st["exit_code"]) if st["exit_code"] is not None else "-"
         print(f"{name:<24}{st['state']:<10}{code:<6}{dur:<10}{st['pid'] or '-'}")
+
+
+def _read_agent_text(agents_dir: Path, name: str, stream: str) -> str:
+    """Read one agent's captured stream; missing files read as empty.
+
+    Log files are already secret-redacted at write time (see
+    _redacting_writer), so re-serializing them in JSON leaks nothing new
+    beyond what the text formats already expose.
+    """
+    p = agents_dir / f"{name}.{stream}"
+    return p.read_text(errors="replace") if p.exists() else ""
 
 
 def _summary_line(meta: dict) -> str:
@@ -462,12 +494,34 @@ def collect(run_id: str, fmt: str = "markdown") -> None:
         for name, st in meta["agents"].items():
             dur = f"{st['duration_s']}s" if st["duration_s"] is not None else "?"
             print(f"\n## {name} — {st['state']} (exit {st['exit_code']}, {dur})")
-            out = (agents_dir / f"{name}.out").read_text(errors="replace") if (agents_dir / f"{name}.out").exists() else ""
-            err = (agents_dir / f"{name}.err").read_text(errors="replace") if (agents_dir / f"{name}.err").exists() else ""
+            out = _read_agent_text(agents_dir, name, "out")
+            err = _read_agent_text(agents_dir, name, "err")
             if out.strip():
                 print("\n```\n" + out.rstrip() + "\n```")
             if err.strip():
                 print("\n_stderr:_\n\n```\n" + err.rstrip() + "\n```")
+    elif fmt == "json":
+        # One machine-readable document: run bookkeeping plus every agent's
+        # captured output, so scripts can filter/summarize without scraping
+        # the markdown or text formats.
+        doc = {
+            "run_id": meta["run_id"],
+            "recipe": meta["recipe"],
+            "status": meta["status"],
+            "started_at": meta.get("started_at"),
+            "finished_at": meta.get("finished_at"),
+            "agents": {
+                name: {
+                    "state": st["state"],
+                    "exit_code": st["exit_code"],
+                    "duration_s": st["duration_s"],
+                    "stdout": _read_agent_text(agents_dir, name, "out"),
+                    "stderr": _read_agent_text(agents_dir, name, "err"),
+                }
+                for name, st in meta["agents"].items()
+            },
+        }
+        print(json.dumps(doc, indent=2, sort_keys=True))
     else:
         for name, st in meta["agents"].items():
             print(f"=== {name} [{st['state']}] ===")
