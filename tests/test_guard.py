@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from bakery.guard import find_secrets, guard_recipe
+from bakery.guard import find_secrets, guard_recipe, redact_secrets
 from bakery.recipe import load_recipe
 from bakery import runner
 
@@ -104,6 +104,29 @@ class GuardTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             runner.start_run(str(p))
         self.assertFalse((Path(".bakery") / "runs").exists(), "refused run must not create a run dir")
+
+
+class RedactSecretsTest(unittest.TestCase):
+    def test_redacts_token_shapes_with_kind_label(self):
+        text = "leaked ghp_" + "a" * 30 + " and sk-" + "b" * 40 + " end"
+        out = redact_secrets(text)
+        self.assertIn("[redacted:github-token]", out)
+        self.assertIn("[redacted:openai-style-api-key]", out)
+        self.assertNotIn("ghp_", out)
+        self.assertNotIn("sk-" + "b" * 40, out)
+
+    def test_redacts_pem_blocks(self):
+        text = "-----BEGIN RSA PRIVATE KEY-----\nfake\n-----END RSA PRIVATE KEY-----"
+        self.assertIn("[redacted:pem-private-key]", redact_secrets(text))
+
+    def test_clean_text_untouched(self):
+        text = "hello world, no secrets here (changeme, example)"
+        self.assertEqual(redact_secrets(text), text)
+
+    def test_multiple_occurrences_all_redacted(self):
+        text = "xoxb-" + "1" * 12 + " then xoxp-" + "2" * 12
+        out = redact_secrets(text)
+        self.assertEqual(out.count("[redacted:slack-token]"), 2)
 
 
 if __name__ == "__main__":
