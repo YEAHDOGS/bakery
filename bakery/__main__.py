@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import runner
+from . import merge, runner
 
 EXAMPLE_RECIPE = """\
 [bakery]
@@ -75,6 +75,11 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("run_id")
     p.add_argument("--format", choices=["markdown", "text"], default="markdown")
     p.set_defaults(fn=lambda a: runner.collect(a.run_id, a.format))
+
+    p = sub.add_parser("merge", help="merge standalone report files into one document")
+    p.add_argument("reports", nargs="+", help="report files to merge, in order")
+    p.add_argument("-o", "--output", default=None, help="write merged doc to file (default: stdout)")
+    p.set_defaults(fn=lambda a: merge.write_merged(a.reports, a.output))
 
     p = sub.add_parser("_supervise", help=argparse.SUPPRESS)
     p.add_argument("run_id")
