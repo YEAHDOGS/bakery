@@ -11,7 +11,10 @@
       output is untrusted).
 - [ ] Recipe validation errors that name the file, section, and agent index
       (already done at the Python level; surface them cleanly in the CLI).
-- [ ] `bake retry <run-id>` — re-run only agents that failed or timed out.
+- [x] `bake retry <run-id>` — re-run only agents that failed or timed out
+      (2026-09-09: bakes a NEW run `<run-id>-retry<N>` from the frozen recipe
+      filtered to failed/timed-out agents; the original run is never
+      rewritten; refuses while the source run is still active).
 - [ ] `bake clean` — prune old run directories, keeping the last N.
 - [ ] Agent `depends_on` — run the aggregation agent only after the swarm
       finishes (the org-audit "coordinator compile" step as a first-class agent).

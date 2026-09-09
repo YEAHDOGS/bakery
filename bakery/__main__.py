@@ -66,6 +66,10 @@ def main(argv: list[str] | None = None) -> None:
         )
     )
 
+    p = sub.add_parser("retry", help="re-run only a run's failed/timed-out agents")
+    p.add_argument("run_id")
+    p.set_defaults(fn=lambda a: runner.retry_run(a.run_id))
+
     p = sub.add_parser("_supervise", help=argparse.SUPPRESS)
     p.add_argument("run_id")
     p.set_defaults(fn=lambda a: runner._supervise(a.run_id))
