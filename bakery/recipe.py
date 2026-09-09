@@ -30,6 +30,11 @@ class AgentSpec:
     timeout: int = 3600
     workdir: str = "."
     env: dict = field(default_factory=dict)
+    # fixture backend fields (canned report stand-ins, no live backends)
+    report: str = ""
+    report_file: str = ""
+    delay: int = 0
+    exit_code: int = 0
 
 
 @dataclass
@@ -77,6 +82,10 @@ def load_recipe(path: str) -> Recipe:
             timeout=int(raw.get("timeout", 3600)),
             workdir=str(raw.get("workdir", ".")),
             env=dict(raw.get("env", {})),
+            report=str(raw.get("report", "")),
+            report_file=str(raw.get("report_file", "")),
+            delay=int(raw.get("delay", 0)),
+            exit_code=int(raw.get("exit_code", 0)),
         )
         try:
             adapter.validate(spec)
