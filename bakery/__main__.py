@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import merge, report, runner
+from . import findings, merge, report, runner
 from .config import STARTER_CONFIG
 
 EXAMPLE_RECIPE = """\
@@ -141,7 +141,24 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("merge", help="merge standalone report files into one document")
     p.add_argument("reports", nargs="+", help="report files to merge, in order")
     p.add_argument("-o", "--output", default=None, help="write merged doc to file (default: stdout)")
-    p.set_defaults(fn=lambda a: merge.write_merged(a.reports, a.output))
+    p.add_argument(
+        "--format",
+        choices=["markdown", "json"],
+        default="markdown",
+        help="json: structured finding-level merge of JSON reports "
+             "(dedupe + provenance + disagreements), per bakery.findings",
+    )
+
+    def _merge_dispatch(a):
+        if a.format == "json":
+            try:
+                findings.write_merged_json(a.reports, a.output)
+            except findings.FindingsError as e:
+                raise SystemExit(f"merge: {e}")
+        else:
+            merge.write_merged(a.reports, a.output)
+
+    p.set_defaults(fn=_merge_dispatch)
 
     p = sub.add_parser("report", help="one command: fan out a mission to agents, collect, merge")
     p.add_argument("recipe", nargs="?", default=None, help="recipe TOML file (or use --task)")

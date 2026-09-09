@@ -5,6 +5,12 @@
 - [x] `bake report` — one command: fan out a mission to agents, wait, collect, merge into a single markdown document (recipe or `--task` mode).
 - [x] `fixture` backend — canned-report agents for offline end-to-end demos (no live AI calls, default-deny friendly).
 - [x] Agent sandboxing: `sandbox_env()` choke point — agents inherit a scrubbed env allowlist, never credentials; secret-looking recipe env keys rejected. Threat model in `docs/THREAT-MODEL.md`.
+- [x] **Structured report merge** — `bake merge --format json` merges JSON
+      agent reports by finding: stable-key dedupe, per-finding `reported_by`
+      provenance, disagreements recorded (never dropped; most severe wins),
+      sanitize + secret redaction on all output, clean one-line errors on
+      malformed input. `bake collect --format json` docs accepted directly.
+      (tests/test_findings.py)
 
 ## Quick wins (small, high value)
 
