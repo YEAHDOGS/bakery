@@ -80,6 +80,11 @@ Short-term: recipe validation errors with line numbers, `--watch` streaming stat
   Placeholders like `changeme` or `${API_KEY}` never trip it. If a task needs
   a credential, the supervisor injects it at the narrowest scope; it never
   goes in the recipe.
+- **Least-privilege agent environment.** Agents no longer inherit the
+  supervisor's full environment — `bakery.sandbox` builds a minimal one
+  (PATH, HOME, LANG, ... plus the recipe's guard-vetted `env`) and drops
+  everything else, including secret-shaped values. An exported token in your
+  shell can't leak to a worker.
 
 ## License
 
