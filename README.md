@@ -25,8 +25,17 @@ python -m bakery status <run-id>
 # per-agent logs
 python -m bakery logs <run-id> analyzer-3
 
+The merge treats agent output as **untrusted**: fence-breaks are escaped,
+ANSI/control characters stripped, secret-shaped values redacted
+(`guard.redact_secrets`), and per-agent output length-capped — so one
+malicious or chatty agent can't poison the merged report (see
+`tests/test_report.py` for the hostile-recipe e2e test).
+
 # merge everything into one report
 python -m bakery collect <run-id> --format markdown
+
+# one command: fan out, wait, merge a *sanitized* report, deliver
+python -m bakery report hello.toml --out report.md
 
 # kill a runaway swarm
 python -m bakery kill <run-id>
