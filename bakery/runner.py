@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .recipe import Recipe, load_recipe
+from .guard import guard_recipe
 
 
 def runs_root() -> Path:
@@ -73,6 +74,7 @@ def _pid_alive(pid: int) -> bool:
 
 def start_run(recipe_path: str, run_id: str | None = None) -> str:
     recipe = load_recipe(recipe_path)
+    guard_recipe(recipe)  # refuse to bake a run that hands secrets to agents
     run_id = run_id or new_run_id()
     run_dir = runs_root() / run_id
     if run_dir.exists():
