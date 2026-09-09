@@ -27,6 +27,7 @@ from pathlib import Path
 
 from .recipe import Recipe, load_recipe
 from .guard import guard_recipe
+from .sandbox import sandboxed_env
 
 
 def runs_root() -> Path:
@@ -127,8 +128,10 @@ def _supervise(run_id: str) -> None:
     running: dict[str, subprocess.Popen] = {}
 
     def launch(agent) -> None:
-        env = os.environ.copy()
-        env.update({k: str(v) for k, v in agent.env.items()})
+        # Least privilege: the agent gets a sandboxed environment, never the
+        # supervisor's full one (bakery.sandbox) — exported tokens in the
+        # supervisor's shell must not reach workers.
+        env = sandboxed_env(os.environ, agent.env)
         out = open(run_dir / "agents" / f"{agent.name}.out", "w")
         err = open(run_dir / "agents" / f"{agent.name}.err", "w")
         proc = subprocess.Popen(
