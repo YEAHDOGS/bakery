@@ -33,7 +33,9 @@ def main(argv: list[str] | None = None) -> None:
 
     p = sub.add_parser("status", help="show agent states for a run")
     p.add_argument("run_id")
-    p.set_defaults(fn=lambda a: runner.status(a.run_id))
+    p.add_argument("--format", choices=["text", "json"], default="text",
+                   help="table (default) or JSON for scripting")
+    p.set_defaults(fn=lambda a: runner.status(a.run_id, a.format))
 
     p = sub.add_parser("logs", help="print an agent's captured output")
     p.add_argument("run_id")
@@ -48,7 +50,8 @@ def main(argv: list[str] | None = None) -> None:
 
     p = sub.add_parser("collect", help="merge a run's outputs into one report")
     p.add_argument("run_id")
-    p.add_argument("--format", choices=["markdown", "text"], default="markdown")
+    p.add_argument("--format", choices=["markdown", "text", "json"], default="markdown",
+                   help="markdown/text, or sanitized JSON for scripting")
     p.set_defaults(fn=lambda a: runner.collect(a.run_id, a.format))
 
     p = sub.add_parser("report", help="fan out a recipe, wait, merge a sanitized report, deliver")
