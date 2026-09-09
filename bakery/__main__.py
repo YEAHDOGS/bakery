@@ -31,6 +31,18 @@ def cmd_report(args) -> None:
     raise SystemExit(f"'{arg}' is neither a recipe file nor a known run id")
 
 
+def cmd_clean(args) -> None:
+    result = runner.clean_runs(args.keep, dry_run=args.dry_run)
+    verb = "would prune" if args.dry_run else "pruned"
+    if result["deleted"]:
+        print(f"{verb}: {', '.join(result['deleted'])}")
+    else:
+        print("nothing to prune")
+    if result["skipped"]:
+        print(f"skipped (no readable meta.json): {', '.join(result['skipped'])}")
+    print(f"kept {result['kept']} run(s)")
+
+
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(prog="bakery", description="parallel swarm management")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -84,6 +96,11 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("retry", help="re-run only a run's failed/timed-out agents")
     p.add_argument("run_id")
     p.set_defaults(fn=lambda a: runner.retry_run(a.run_id))
+
+    p = sub.add_parser("clean", help="prune old run directories, keeping the last N finished runs")
+    p.add_argument("--keep", type=int, default=10, help="finished runs to keep (default: 10)")
+    p.add_argument("--dry-run", action="store_true", help="list what would be pruned, delete nothing")
+    p.set_defaults(fn=lambda a: cmd_clean(a))
 
     p = sub.add_parser("_supervise", help=argparse.SUPPRESS)
     p.add_argument("run_id")

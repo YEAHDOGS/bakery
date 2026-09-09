@@ -48,6 +48,9 @@ python -m bakery report <run-id> --out merged.md
 # retry just the failures of a finished run (new <run-id>-retryN run)
 python -m bakery retry <run-id>
 
+# prune old runs, keeping the last 10 finished runs (--dry-run to preview)
+python -m bakery clean --keep 5 --dry-run
+
 # kill a runaway swarm
 python -m bakery kill <run-id>
 ```
@@ -108,7 +111,7 @@ The CLI is a thin orchestrator over the `shell` backend today. Backends are plug
 
 ## Roadmap
 
-Short-term: recipe validation errors with line numbers, `--watch` streaming status. Shipped: JSON output mode for scripting (`bake status --format json`, `bake collect --format json`; the JSON collect embeds sanitized agent output), and `bake retry <run-id>` — re-runs only the failed/timed-out agents of a finished run as a new `<run-id>-retry<N>` run. Longer-term: real agent backends and a web dashboard. Full list in `docs/ROADMAP.md`.
+Short-term: recipe validation errors with line numbers, `--watch` streaming status. Shipped: JSON output mode for scripting (`bake status --format json`, `bake collect --format json`; the JSON collect embeds sanitized agent output), `bake retry <run-id>` — re-runs only the failed/timed-out agents of a finished run as a new `<run-id>-retry<N>` run, and `bake clean [--keep N] [--dry-run]` — prune old run directories (active runs never deleted). Longer-term: real agent backends and a web dashboard. Full list in `docs/ROADMAP.md`.
 
 ## Security
 
