@@ -131,6 +131,10 @@ class DiscoveryTest(unittest.TestCase):
             os.environ["HOME"] = self.old_home
         if self.old_bake is not None:
             os.environ["BAKE_CONFIG"] = self.old_bake
+        else:
+            # tests in this class set BAKE_CONFIG directly; don't leak it
+            # into later test modules (order-dependent config pollution)
+            os.environ.pop("BAKE_CONFIG", None)
 
     def test_no_config_is_defaults(self):
         cfg = config.load_config()
