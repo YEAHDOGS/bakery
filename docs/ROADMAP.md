@@ -40,6 +40,12 @@
       on his phone, so this should be phone-first.
 - [ ] **Recipe includes** — compose recipes from shared fragments
       (e.g. one fragment per repo in the org).
-- [ ] **Dry run** — `bake plan` prints the launch waves without spawning.
+- [x] **Dry run** — `bake plan` prints the launch waves (FIFO batches of
+      `max_parallel`) plus resolved per-agent timeouts/retries, without
+      spawning anything. Runs the same preflights as a real run (recipe
+      validation, config load, secret-env rejection); recipe errors surface
+      as one clean `plan: <file: section/agent index>` line. `--task` stub
+      mode, `--only`, `--format json` supported; env values are never
+      printed. (tests/test_plan.py)
 - [ ] SSH and Docker backends for running swarms across machines (Castle
       nodes would be a natural fit).
