@@ -45,6 +45,43 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+# Seconds an over-time agent gets to shut itself down (SIGTERM) before the
+# supervisor escalates to SIGKILL. Cooperative agents flush their final
+# output and exit with their real code; only stuck agents die hard. The
+# grace wait happens inside the supervisor's poll loop (agents are separate
+# processes, so a stalled reap delays bookkeeping only, not other agents).
+TERMINATE_GRACE_S = 5
+
+
+def _terminate(proc: subprocess.Popen, pgid: int | None, grace: float = TERMINATE_GRACE_S) -> int | None:
+    """SIGTERM an over-time agent, escalate to SIGKILL after `grace` seconds.
+
+    Returns the child's exit code (real code on cooperative shutdown,
+    negative on signal death), or None when the child was already reaped.
+    Never raises.
+    """
+    rc = proc.poll()
+    if rc is not None:
+        return rc
+    if pgid is None:
+        return proc.wait()
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        pass
+    deadline = time.monotonic() + grace
+    while time.monotonic() < deadline:
+        rc = proc.poll()
+        if rc is not None:
+            return rc
+        time.sleep(0.1)
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+    return proc.wait()
+
+
 def _meta_path(run_id: str) -> Path:
     return runs_root() / run_id / "meta.json"
 
@@ -272,28 +309,23 @@ def _supervise(run_id: str) -> None:
                     retries_used = fresh.get("attempts", 1) - 1
                     if retries_used < params[name]["retries"]:
                         # Timeout, but the run still owes this agent attempts:
-                        # relaunch it from scratch (its partial output is
-                        # already on disk, flagged PARTIAL at merge time).
+                        # give it a graceful shutdown first (it may flush a
+                        # partial report), then relaunch it from scratch.
+                        # Its partial output is already on disk, flagged
+                        # PARTIAL at merge time.
                         print(
                             f"[{_now()}] {name} timed out after "
-                            f"{params[name]['timeout']}s; retrying "
+                            f"{params[name]['timeout']}s; SIGTERM, "
+                            f"{TERMINATE_GRACE_S}s grace, then retrying "
                             f"(attempt {fresh.get('attempts', 1) + 1})",
                             flush=True,
                         )
-                        try:
-                            os.killpg(fresh["pgid"], signal.SIGKILL)
-                        except (ProcessLookupError, PermissionError):
-                            pass
-                        proc.wait()
+                        _terminate(proc, fresh["pgid"])
                         stop_streams(name)
                         launch(by_name[name])
                         continue
-                    try:
-                        os.killpg(fresh["pgid"], signal.SIGKILL)
-                    except (ProcessLookupError, PermissionError):
-                        pass
-                    proc.wait()
-                    finish(name, "timeout", -1)
+                    rc = _terminate(proc, fresh["pgid"])
+                    finish(name, "timeout", rc if rc is not None else -1)
     finally:
         meta = _load_meta(run_id)
         if meta["status"] == "running":
