@@ -49,8 +49,22 @@ def cmd_init(args) -> None:
     print("bake it off with: python -m bakery run", dest)
 
 
+def _clean_cli_errors(prefix, fn):
+    """Wrap a CLI dispatch so ValueErrors (recipe validation, bad CLI args)
+    surface as one clean `<prefix>: <message>` line instead of a traceback.
+    Recipe errors already name the file, section, and agent index."""
+    def wrapped(a):
+        try:
+            return fn(a)
+        except (ValueError, FileNotFoundError) as e:
+            raise SystemExit(f"{prefix}: {e}")
+    return wrapped
+
+
 def cmd_run(args) -> None:
-    run_id = runner.start_run(args.recipe, args.run_id)
+    # Recipe validation errors already name the file, section, and agent
+    # index — surface them as one clean line, never a traceback.
+    run_id = _clean_cli_errors("run", lambda a: runner.start_run(a.recipe, a.run_id))(args)
     if args.watch:
         _check_watched(run_id, args.timeout)
 
@@ -184,13 +198,16 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("-o", "--output", default=None, help="write merged doc to file (default: .bakery/runs/<id>/report.md)")
     p.add_argument("--timeout", type=float, default=None, help="max seconds to wait for the swarm")
     p.set_defaults(
-        fn=lambda a: report.bake_report(
-            a.recipe,
-            task=a.task,
-            agent_names=a.agents.split(",") if a.agents else None,
-            only_agents=a.only.split(",") if a.only else None,
-            output=a.output,
-            timeout=a.timeout,
+        fn=_clean_cli_errors(
+            "report",
+            lambda a: report.bake_report(
+                a.recipe,
+                task=a.task,
+                agent_names=a.agents.split(",") if a.agents else None,
+                only_agents=a.only.split(",") if a.only else None,
+                output=a.output,
+                timeout=a.timeout,
+            ),
         )
     )
 
@@ -212,16 +229,16 @@ def main(argv: list[str] | None = None) -> None:
     def _plan_dispatch(a):
         # Recipe validation errors surface as one clean line ("plan: ..."),
         # not a traceback — they already carry file, section, and agent index.
-        try:
-            plan.bake_plan(
-                a.recipe,
-                task=a.task,
-                agent_names=a.agents.split(",") if a.agents else None,
-                only_agents=a.only.split(",") if a.only else None,
-                fmt=a.format,
-            )
-        except ValueError as e:
-            raise SystemExit(f"plan: {e}")
+        return _clean_cli_errors(
+            "plan",
+            lambda x: plan.bake_plan(
+                x.recipe,
+                task=x.task,
+                agent_names=x.agents.split(",") if x.agents else None,
+                only_agents=x.only.split(",") if x.only else None,
+                fmt=x.format,
+            ),
+        )(a)
 
     p.set_defaults(fn=_plan_dispatch)
 

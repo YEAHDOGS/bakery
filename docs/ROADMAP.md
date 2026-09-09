@@ -20,8 +20,11 @@
       swarm snapshots (state/exit_code/duration_s, internal pids excluded)
       and one JSON run document with every agent's captured output.
       (tests/test_json_output.py)
-- [ ] Recipe validation errors that name the file, section, and agent index
-      (already done at the Python level; surface them cleanly in the CLI).
+- [x] Recipe validation errors that name the file, section, and agent index
+      — surfaced cleanly in the CLI: `bake run`, `bake report`, and `bake plan`
+      fail with one clean `<cmd>: <message>` line instead of a traceback;
+      missing recipe files get the same one-line treatment.
+      (tests/test_cli_errors.py)
 - [x] `bake retry <run-id>` — re-run only agents that failed or timed out.
       Fresh run with a filtered copy of the frozen recipe; the original
       run's logs are untouched (`retry_of` recorded in the new meta).
