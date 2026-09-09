@@ -1,0 +1,53 @@
+# Worked example: one command, three "agents", one merged report.
+#
+# Backend is `fixture` — each agent plays a canned report, standing in for a
+# live Kite / Claude / Gemini backend. No network, no API keys, the whole
+# pipeline (fan-out, sandbox, redaction, merge) runs for real.
+#
+#   python -m bakery report examples/multi-ai-report.toml -o /tmp/report.md
+
+[bakery]
+name = "multi-ai-demo"
+backend = "fixture"
+max_parallel = 3
+
+[[agents]]
+name = "kite"
+delay = 1
+report = """
+# Kite — site performance pass
+
+Checked icecream.wearedogs.net render path. Findings:
+
+- Hero image is 2.1MB unoptimized — serve a 480w WebP variant.
+- Feed cards do 40 DOM writes per scroll tick; batch into one rAF.
+- No JS errors in console on load.
+
+Verdict: fast, but the hero is the bottleneck.
+"""
+
+[[agents]]
+name = "claude"
+delay = 2
+report = """
+# Claude — accessibility pass
+
+- Contrast on the feed timestamp text is 3.1:1 — bump to 4.5:1.
+- Video cards need aria-labels; screen reader hits "button" x40.
+- Keyboard focus order skips the filter bar.
+
+Verdict: three small fixes, all in one stylesheet + markup pass.
+"""
+
+[[agents]]
+name = "gemini"
+delay = 1
+report = """
+# Gemini — content pass
+
+- Headline is strong; subhead buries the $30k hook — move it up.
+- Applicant feed count ("280 researched") is a trust signal; make it bigger.
+- Add one screenshot of the market monitor above the fold.
+
+Verdict: reorder, don't rewrite.
+"""

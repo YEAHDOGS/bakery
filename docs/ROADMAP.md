@@ -1,5 +1,11 @@
 # Roadmap
 
+## Shipped
+
+- [x] `bake report` — one command: fan out a mission to agents, wait, collect, merge into a single markdown document (recipe or `--task` mode).
+- [x] `fixture` backend — canned-report agents for offline end-to-end demos (no live AI calls, default-deny friendly).
+- [x] Agent sandboxing: `sandbox_env()` choke point — agents inherit a scrubbed env allowlist, never credentials; secret-looking recipe env keys rejected. Threat model in `docs/THREAT-MODEL.md`.
+
 ## Quick wins (small, high value)
 
 - [ ] `bake run --watch` — stream status until the run finishes, instead of
