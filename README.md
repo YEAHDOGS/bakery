@@ -27,7 +27,9 @@ The endgame (see `VISION.md`): **one command fans work out to Kite, Claude, and 
 ./bake run hello.toml            # returns immediately; agents run in background
 ./bake status <run-id>
 ./bake logs <run-id> analyzer-3
-./bake collect <run-id> --format markdown
+./bake collect <run-id> --format markdown      # markdown (default), text, or json
+./bake collect <run-id> --format json > run.json   # one machine-readable doc for scripting
+./bake status <run-id> --format json               # text (default) or json snapshot
 ./bake kill <run-id>             # kill a runaway swarm
 ```
 

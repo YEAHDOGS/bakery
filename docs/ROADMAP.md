@@ -10,7 +10,10 @@
 
 - [x] `bake run --watch` — stream status until the run finishes, instead of
       polling `status` by hand (runner.watch; also `bake watch <run-id>`).
-- [ ] `--format json` on `status` and `collect` for scripting.
+- [x] `--format json` on `status` and `collect` for scripting — machine-readable
+      swarm snapshots (state/exit_code/duration_s, internal pids excluded)
+      and one JSON run document with every agent's captured output.
+      (tests/test_json_output.py)
 - [ ] Recipe validation errors that name the file, section, and agent index
       (already done at the Python level; surface them cleanly in the CLI).
 - [ ] `bake retry <run-id>` — re-run only agents that failed or timed out.
