@@ -139,13 +139,22 @@ def start_run(recipe_path: str, run_id: str | None = None) -> str:
     _save_meta(run_id, meta)
 
     log = open(run_dir / "supervisor.log", "w")
-    subprocess.Popen(
+    # The supervisor is a detached `python -m bakery` process: it must find
+    # the bakery package no matter what cwd it inherits, so pin PYTHONPATH
+    # to this checkout's parent directory.
+    pkg_parent = str(Path(__file__).resolve().parent.parent)
+    sup_env = os.environ.copy()
+    sup_env["PYTHONPATH"] = pkg_parent + os.pathsep + sup_env.get("PYTHONPATH", "")
+    proc = subprocess.Popen(
         [sys.executable, "-m", "bakery", "_supervise", run_id],
         stdout=log,
         stderr=subprocess.STDOUT,
         start_new_session=True,
         close_fds=True,
+        env=sup_env,
     )
+    meta["supervisor_pid"] = proc.pid
+    _save_meta(run_id, meta)
     print(f"baked run {run_id} ({recipe.name}, {len(recipe.agents)} agents)")
     return run_id
 

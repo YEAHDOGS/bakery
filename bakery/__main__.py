@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import merge, runner
+from . import merge, report, runner
 
 EXAMPLE_RECIPE = """\
 [bakery]
@@ -80,6 +80,24 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("reports", nargs="+", help="report files to merge, in order")
     p.add_argument("-o", "--output", default=None, help="write merged doc to file (default: stdout)")
     p.set_defaults(fn=lambda a: merge.write_merged(a.reports, a.output))
+
+    p = sub.add_parser("report", help="one command: fan out a mission to agents, collect, merge")
+    p.add_argument("recipe", nargs="?", default=None, help="recipe TOML file (or use --task)")
+    p.add_argument("--task", default=None, help="bare task string; builds a fixture stub recipe")
+    p.add_argument("--agents", default=None, help="comma-separated agent names for --task")
+    p.add_argument("--only", default=None, help="run only these recipe agents (comma-separated)")
+    p.add_argument("-o", "--output", default=None, help="write merged doc to file (default: .bakery/runs/<id>/report.md)")
+    p.add_argument("--timeout", type=float, default=None, help="max seconds to wait for the swarm")
+    p.set_defaults(
+        fn=lambda a: report.bake_report(
+            a.recipe,
+            task=a.task,
+            agent_names=a.agents.split(",") if a.agents else None,
+            only_agents=a.only.split(",") if a.only else None,
+            output=a.output,
+            timeout=a.timeout,
+        )
+    )
 
     p = sub.add_parser("_supervise", help=argparse.SUPPRESS)
     p.add_argument("run_id")
