@@ -77,5 +77,30 @@ class BakeReportEndToEndTest(unittest.TestCase):
         self.assertIn("say hi", doc)
 
 
+    def test_timeout_agent_flagged_partial_end_to_end(self):
+        """A slow agent is killed on timeout and its section is flagged PARTIAL."""
+        tmp = Path(tempfile.mkdtemp())
+        recipe_p = tmp / "r.toml"
+        recipe_p.write_text(
+            '[bakery]\nname = "e2e-timeout"\nbackend = "fixture"\nmax_parallel = 2\n'
+            '[[agents]]\nname = "fast"\nreport = "# fast findings\\nok"\ntimeout = 60\n'
+            '[[agents]]\nname = "slow"\nreport = "# slow findings\\npartial"\n'
+            'delay = 5\ntimeout = 1\n'
+        )
+        cwd = os.getcwd()
+        os.chdir(tmp)
+        try:
+            out = tmp / "merged.md"
+            got = report.bake_report(str(recipe_p), output=str(out), timeout=60)
+        finally:
+            os.chdir(cwd)
+        self.assertEqual(got, str(out))
+        doc = out.read_text()
+        self.assertIn("**done** (exit 0", doc)
+        self.assertIn("**TIMEOUT**", doc)
+        self.assertIn("**PARTIAL**", doc)
+        self.assertIn("1/2 agents finished cleanly", doc)
+
+
 if __name__ == "__main__":
     unittest.main()

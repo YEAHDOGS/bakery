@@ -70,5 +70,66 @@ class MergeTest(unittest.TestCase):
         self.assertIn("merged 1 report(s)", buf.getvalue())
 
 
+class StatusesTest(unittest.TestCase):
+    """Per-agent outcome annotation: a dead agent's partial output is flagged."""
+
+    def _report(self, text: str) -> str:
+        fd, path = tempfile.mkstemp(suffix=".md")
+        with os.fdopen(fd, "w") as f:
+            f.write(text)
+        self.addCleanup(os.unlink, path)
+        return path
+
+    def test_done_status_annotated(self):
+        a = self._report("findings")
+        doc = merge.merge_reports(
+            [a], names=["kite"],
+            statuses={"kite": {"state": "done", "exit_code": 0, "duration_s": 12.3}},
+        )
+        self.assertIn("## Report: `kite`", doc)
+        self.assertIn("**done** (exit 0, 12.3s)", doc)
+        self.assertNotIn("PARTIAL", doc)
+        self.assertIn("**Outcome:** 1/1 agents finished cleanly.", doc)
+
+    def test_timeout_status_flagged_partial(self):
+        a = self._report("half a report")
+        doc = merge.merge_reports(
+            [a], names=["kite"],
+            statuses={"kite": {"state": "timeout", "exit_code": -1, "duration_s": 60.0}},
+        )
+        self.assertIn("**TIMEOUT** (exit -1, 60.0s)", doc)
+        self.assertIn("**PARTIAL**", doc)
+        self.assertIn("1 did not: `kite`", doc)
+
+    def test_killed_and_unknown_flagged(self):
+        a = self._report("x")
+        b = self._report("y")
+        doc = merge.merge_reports(
+            [a, b], names=["a1", "a2"],
+            statuses={
+                "a1": {"state": "killed", "exit_code": None, "duration_s": None},
+                "a2": {"state": "unknown", "exit_code": None, "duration_s": None},
+            },
+        )
+        self.assertIn("**KILLED**", doc)
+        self.assertIn("**UNKNOWN**", doc)
+        self.assertEqual(doc.count("**PARTIAL**"), 2)
+
+    def test_status_text_sanitized(self):
+        a = self._report("ok")
+        doc = merge.merge_reports(
+            [a], names=["kite"],
+            statuses={"kite": {"state": "done\x1b[31m", "exit_code": 0, "duration_s": 1}},
+        )
+        self.assertNotIn("\x1b", doc)
+
+    def test_no_statuses_preserves_old_output(self):
+        a = self._report("plain")
+        doc = merge.merge_reports([a], names=["kite"])
+        self.assertIn("## Report: `kite`", doc)
+        self.assertNotIn("outcome:", doc)
+        self.assertNotIn("**Outcome:**", doc)
+
+
 if __name__ == "__main__":
     unittest.main()
