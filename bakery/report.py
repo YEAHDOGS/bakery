@@ -20,10 +20,9 @@ import time
 from pathlib import Path
 
 from . import merge, runner
+from .runner import TERMINAL_STATES
 from .config import apply_redact, load_config
 from .recipe import Recipe, load_recipe
-
-TERMINAL_STATES = {"done", "killed"}
 
 
 def wait_for_run(run_id: str, timeout: float = 3600, poll: float = 1.0) -> dict:

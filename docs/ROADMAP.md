@@ -8,8 +8,8 @@
 
 ## Quick wins (small, high value)
 
-- [ ] `bake run --watch` — stream status until the run finishes, instead of
-      polling `status` by hand.
+- [x] `bake run --watch` — stream status until the run finishes, instead of
+      polling `status` by hand (runner.watch; also `bake watch <run-id>`).
 - [ ] `--format json` on `status` and `collect` for scripting.
 - [ ] Recipe validation errors that name the file, section, and agent index
       (already done at the Python level; surface them cleanly in the CLI).
