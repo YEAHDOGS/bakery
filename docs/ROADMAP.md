@@ -19,7 +19,10 @@
       report files and emit one merged markdown report: deduped corroborated
       findings, conflicts flagged with agent attribution, per-agent detail
       preserved; missing report files noted, unfinished agents flagged.
-- [ ] `bake clean` — prune old run directories, keeping the last N.
+- [x] `bake clean` — prune old run directories, keeping the last N (2026-09-09:
+      `bake clean [--keep N] [--dry-run]`; active runs are never deleted and
+      don't count against `--keep`; dirs without a readable meta.json are
+      skipped, never touched).
 - [ ] Agent `depends_on` — run the aggregation agent only after the swarm
       finishes (the org-audit "coordinator compile" step as a first-class agent).
 - [ ] Timeout granularity: warn (SIGTERM) a few seconds before SIGKILL.

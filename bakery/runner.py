@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -361,6 +362,53 @@ def list_runs() -> None:
             print(f"{meta['run_id']}  {meta['recipe']:<20} {meta['status']:<9} {done}/{n} done")
         except (FileNotFoundError, json.JSONDecodeError):
             print(f"{d.name}  (corrupt)")
+
+
+def clean_runs(keep: int = 10, dry_run: bool = False) -> dict:
+    """Prune old run directories, keeping the most recent `keep` finished runs.
+
+    Roadmap quick win: `.bakery/runs` accumulates one directory per swarm;
+    `bake clean` keeps the freshest `keep` runs and prunes the rest.
+
+    Safety (a run dir holds the only copy of a swarm's logs and reports):
+    - runs still "running"/"starting" are NEVER deleted and don't count
+      against `keep`;
+    - directories without a readable meta.json are skipped, never touched;
+    - `dry_run=True` lists what would go without deleting anything.
+
+    Returns {"deleted": [...], "skipped": [...], "kept": n}. With `dry_run`,
+    "deleted" is the list of runs that *would* be pruned.
+    """
+    if keep < 0:
+        raise SystemExit("--keep must be >= 0")
+    root = runs_root()
+    if not root.exists():
+        return {"deleted": [], "skipped": [], "kept": 0}
+    runs: list[tuple[str, str, str | None, Path]] = []
+    skipped: list[str] = []
+    for d in root.iterdir():
+        if not d.is_dir():
+            continue
+        try:
+            meta = json.loads((d / "meta.json").read_text())
+        except (FileNotFoundError, json.JSONDecodeError):
+            skipped.append(d.name)
+            continue
+        runs.append((meta.get("started_at") or d.name, d.name, meta.get("status"), d))
+    runs.sort(key=lambda r: (r[0], r[1]), reverse=True)  # newest first
+    active = [r for r in runs if r[2] in ("running", "starting")]
+    finished = [r for r in runs if r[2] not in ("running", "starting")]
+    targets = finished[keep:]
+    deleted: list[str] = []
+    for _, run_id, _status, path in targets:
+        if not dry_run:
+            shutil.rmtree(path)
+        deleted.append(run_id)
+    return {
+        "deleted": sorted(deleted),
+        "skipped": sorted(skipped),
+        "kept": len(finished[:keep]) + len(active),
+    }
 
 
 def collect(run_id: str, fmt: str = "markdown") -> None:
