@@ -158,7 +158,18 @@ def bake_report(
         run_dir = runner.runs_root() / run_id
         out_paths = [str(run_dir / "agents" / f"{a.name}.out") for a in agents]
         labels = [a.name for a in agents]
-        doc = merge.merge_reports(out_paths, names=labels)
+        # Outcome bookkeeping: timed-out / killed / failed agents get a
+        # PARTIAL flag on their section, so a dead agent's truncated output
+        # can never pass silently as a complete report.
+        statuses = {
+            a.name: {
+                "state": meta["agents"][a.name]["state"],
+                "exit_code": meta["agents"][a.name]["exit_code"],
+                "duration_s": meta["agents"][a.name]["duration_s"],
+            }
+            for a in agents
+        }
+        doc = merge.merge_reports(out_paths, names=labels, statuses=statuses)
         if output:
             Path(output).write_text(doc)
         else:
