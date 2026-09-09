@@ -107,6 +107,15 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("list", help="list runs")
     p.set_defaults(fn=lambda a: runner.list_runs())
 
+    p = sub.add_parser("clean", help="delete old run directories, keeping the newest N")
+    p.add_argument(
+        "--keep",
+        type=int,
+        default=10,
+        help="how many of the newest runs to keep (default: 10)",
+    )
+    p.set_defaults(fn=lambda a: runner.clean(a.keep))
+
     p = sub.add_parser("status", help="show agent states for a run")
     p.add_argument("run_id")
     p.add_argument(

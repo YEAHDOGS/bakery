@@ -521,6 +521,47 @@ def retry(run_id: str, new_run_id: str | None = None) -> str | None:
     return new_id
 
 
+def clean(keep: int = 10) -> list[str]:
+    """Delete old run directories, keeping the newest `keep`.
+
+    Sorts by run start time (newest first; run ids are timestamp-prefixed
+    so names order the same way). Skips anything still live (status not
+    terminal — the supervisor may still own those agents) and anything
+    that doesn't look like a bakery run (no meta.json), so stray files
+    under .bakery/runs are never touched. Returns the removed run ids.
+    """
+    root = runs_root()
+    if not root.exists():
+        print("no runs yet")
+        return []
+    entries = []
+    for d in root.iterdir():
+        if not d.is_dir():
+            continue
+        meta_path = d / "meta.json"
+        if not meta_path.exists():
+            continue
+        try:
+            meta = json.loads(meta_path.read_text())
+        except json.JSONDecodeError:
+            continue
+        entries.append((meta.get("started_at") or "", d.name, meta))
+    # Newest first: started_at is ISO UTC, run ids are timestamp-prefixed,
+    # so name is a reliable tiebreak for runs that never finished starting.
+    entries.sort(key=lambda e: (e[0], e[1]), reverse=True)
+    kept, removed, skipped = entries[:keep], [], []
+    for _, name, meta in entries[keep:]:
+        if meta.get("status") not in TERMINAL_STATES:
+            skipped.append(name)
+            continue
+        shutil.rmtree(root / name)
+        removed.append(name)
+    print(f"kept {len(kept)} run(s), removed {len(removed)}, skipped {len(skipped)} live")
+    if skipped:
+        print("skipped (still live): " + ", ".join(sorted(skipped)))
+    return removed
+
+
 def list_runs() -> None:
     root = runs_root()
     if not root.exists():
