@@ -13,11 +13,14 @@ Bakery is a small, stdlib-only CLI for orchestrating parallel work — spawn N w
 ## Quickstart
 
 ```bash
-# scaffold an example recipe
+# scaffold a fresh bakery project (bakery.toml + .bakery/ tasks & notes)
 python -m bakery init
 
-# bake off a swarm (returns immediately; agents run in background)
-python -m bakery run hello.toml
+# peek at what init would create, without writing anything
+python -m bakery init --dry-run
+
+# bake off the example task (returns immediately; agents run in background)
+python -m bakery run .bakery/tasks/hello.toml
 
 # watch the swarm
 python -m bakery status <run-id>
@@ -35,11 +38,29 @@ malicious or chatty agent can't poison the merged report (see
 python -m bakery collect <run-id> --format markdown
 
 # one command: fan out, wait, merge a *sanitized* report, deliver
-python -m bakery report hello.toml --out report.md
+python -m bakery report .bakery/tasks/hello.toml --out report.md
 
 # kill a runaway swarm
 python -m bakery kill <run-id>
 ```
+
+## Project layout (`bake init`)
+
+`bake init [dir]` scaffolds a fresh project and is idempotent — run it
+twice and existing files are never overwritten, only reported as skipped:
+
+```
+my-project/
+├── bakery.toml                        project config: named AI backends + merge strategy
+└── .bakery/
+    ├── tasks/hello.toml               example task file (a runnable swarm recipe)
+    └── notes/agents-skills-eval.md    starter checklist for evaluating agent/skill repos
+```
+
+`bakery.toml` registers named backends (`shell`, `claude-cli`, `gemini-cli`
+stubs — the shell backend is what runs today) and picks a
+`merge_strategy` (`concat` today; `best-of`/`summarize` reserved for the LLM
+backends). Pass `--dry-run` to preview the tree without writing anything.
 
 ## Example recipe
 
