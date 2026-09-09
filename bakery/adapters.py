@@ -29,7 +29,11 @@ merge in `os.environ` itself, or the sandbox guarantee breaks.
 
 from __future__ import annotations
 
+import os
+import shlex
 import subprocess
+import tempfile
+from pathlib import Path
 
 
 class Adapter:
@@ -68,6 +72,60 @@ class ShellAdapter(Adapter):
         )
 
 
+class FixtureAdapter(Adapter):
+    """Canned-report agents: stand-ins for real backends with no network.
+
+    A fixture agent plays a canned report (inline `report = "..."` or a
+    `report_file`) to stdout, optionally after `delay` seconds, and exits with
+    `exit_code`. This is how you run the full bake-report pipeline end to end
+    without live AI calls — each fixture stands in for one backend
+    (kite / claude / gemini) while the orchestration, sandboxing, and merge
+    layers exercise the same code paths as production.
+    """
+
+    name = "fixture"
+
+    def validate(self, spec) -> None:
+        if not spec.report and not spec.report_file:
+            raise ValueError(
+                f"agent '{spec.name}' needs report = \"...\" or report_file = \"...\" "
+                "for the fixture backend"
+            )
+        if spec.delay < 0:
+            raise ValueError(f"agent '{spec.name}': delay must be >= 0")
+        if spec.report_file and not Path(spec.report_file).is_file():
+            raise ValueError(
+                f"agent '{spec.name}': report_file '{spec.report_file}' not found"
+            )
+
+    def spawn(self, spec, *, stdout, stderr, env) -> subprocess.Popen:
+        if spec.report:
+            text = spec.report
+        else:
+            text = Path(spec.report_file).read_text(errors="replace")
+        # Write the canned report to a temp file and `cat` it: avoids shell
+        # quoting games with arbitrary report text. Temp file is removed
+        # by the agent process itself after reading.
+        fd, tmp = tempfile.mkstemp(prefix=f"fixture-{spec.name}-", suffix=".md")
+        os.write(fd, text.encode("utf-8", errors="replace"))
+        os.close(fd)
+        script = (
+            f"sleep {int(spec.delay)}; "
+            f"cat {shlex.quote(tmp)}; "
+            f"rc={int(spec.exit_code)}; "
+            f"rm -f {shlex.quote(tmp)}; "
+            f"exit $rc"
+        )
+        return subprocess.Popen(
+            ["bash", "-c", script],
+            stdout=stdout,
+            stderr=stderr,
+            cwd=spec.workdir,
+            env={k: str(v) for k, v in env.items()},
+            start_new_session=True,
+        )
+
+
 _ADAPTERS: dict[str, Adapter] = {}
 
 
@@ -88,3 +146,4 @@ def get(backend: str) -> Adapter:
 
 
 register(ShellAdapter())
+register(FixtureAdapter())
