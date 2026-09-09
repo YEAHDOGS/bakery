@@ -4,14 +4,31 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 from . import runner
 from . import report as bake_report_mod
 from . import scaffold
 
 
-def cmd_init(args) -> None:
-    scaffold.init_project(args.dir, dry_run=args.dry_run)
+def cmd_report(args) -> None:
+    """`bake report`: fan out a recipe, or merge a completed run's reports.
+
+    The positional arg disambiguates by existence: a file path is treated as
+    a recipe (fan out, wait, merge, deliver); an existing run id is treated
+    as a merge target (`bake report <run-id>`).
+    """
+    arg = args.target
+    if Path(arg).is_file():
+        print(bake_report_mod.bake_report(arg, args.run_id, args.format, args.out, args.timeout), end="")
+        return
+    if (runner.runs_root() / arg).exists():
+        report = bake_report_mod.merge_run(arg)
+        if args.out:
+            Path(args.out).write_text(report)
+        print(report, end="")
+        return
+    raise SystemExit(f"'{arg}' is neither a recipe file nor a known run id")
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -54,17 +71,15 @@ def main(argv: list[str] | None = None) -> None:
                    help="markdown/text, or sanitized JSON for scripting")
     p.set_defaults(fn=lambda a: runner.collect(a.run_id, a.format))
 
-    p = sub.add_parser("report", help="fan out a recipe, wait, merge a sanitized report, deliver")
-    p.add_argument("recipe", help="recipe TOML file")
+    p = sub.add_parser("report", help="fan out a recipe, or merge a completed run's reports")
+    p.add_argument("target", metavar="recipe|run-id",
+                   help="recipe TOML file (fan out, wait, merge, deliver) or a run id (merge that run's reports)")
     p.add_argument("--id", dest="run_id", default=None, help="run id (default: generated)")
-    p.add_argument("--format", choices=["markdown", "text"], default="markdown")
+    p.add_argument("--format", choices=["markdown", "text"], default="markdown",
+                   help="fan-out mode only; merge mode always emits markdown")
     p.add_argument("--out", default=None, help="write the report to this file (default: stdout)")
-    p.add_argument("--timeout", type=float, default=None, help="overall wait deadline in seconds")
-    p.set_defaults(
-        fn=lambda a: print(
-            bake_report_mod.bake_report(a.recipe, a.run_id, a.format, a.out, a.timeout), end=""
-        )
-    )
+    p.add_argument("--timeout", type=float, default=None, help="fan-out mode: overall wait deadline in seconds")
+    p.set_defaults(fn=cmd_report)
 
     p = sub.add_parser("retry", help="re-run only a run's failed/timed-out agents")
     p.add_argument("run_id")

@@ -15,6 +15,10 @@
       (2026-09-09: bakes a NEW run `<run-id>-retry<N>` from the frozen recipe
       filtered to failed/timed-out agents; the original run is never
       rewritten; refuses while the source run is still active).
+- [x] `bake report <run-id>` merge mode — read a completed run's per-agent
+      report files and emit one merged markdown report: deduped corroborated
+      findings, conflicts flagged with agent attribution, per-agent detail
+      preserved; missing report files noted, unfinished agents flagged.
 - [ ] `bake clean` — prune old run directories, keeping the last N.
 - [ ] Agent `depends_on` — run the aggregation agent only after the swarm
       finishes (the org-audit "coordinator compile" step as a first-class agent).
