@@ -4,49 +4,23 @@ from __future__ import annotations
 
 import argparse
 import sys
-from pathlib import Path
 
 from . import runner
 from . import report as bake_report_mod
-
-EXAMPLE_RECIPE = """\
-[bakery]
-name = "hello-swarm"
-backend = "shell"
-max_parallel = 3
-
-[[agents]]
-name = "agent-1"
-cmd = ["bash", "-lc", "echo hello from agent 1; sleep 1; echo done"]
-timeout = 60
-
-[[agents]]
-name = "agent-2"
-cmd = ["bash", "-lc", "echo hello from agent 2; sleep 2; echo done"]
-timeout = 60
-
-[[agents]]
-name = "agent-3"
-cmd = ["bash", "-lc", "echo hello from agent 3; sleep 1; echo done"]
-timeout = 60
-"""
+from . import scaffold
 
 
 def cmd_init(args) -> None:
-    dest = Path(args.path)
-    if dest.exists():
-        raise SystemExit(f"{dest} already exists")
-    dest.write_text(EXAMPLE_RECIPE)
-    print(f"wrote example recipe to {dest}")
-    print("bake it off with: python -m bakery run", dest)
+    scaffold.init_project(args.dir, dry_run=args.dry_run)
 
 
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(prog="bakery", description="parallel swarm management")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    p = sub.add_parser("init", help="write an example recipe")
-    p.add_argument("path", nargs="?", default="hello.toml")
+    p = sub.add_parser("init", help="scaffold a fresh bakery project layout (idempotent)")
+    p.add_argument("dir", nargs="?", default=".", help="directory to initialize (default: .)")
+    p.add_argument("--dry-run", action="store_true", help="print the file tree, write nothing")
     p.set_defaults(fn=lambda a: cmd_init(a))
 
     p = sub.add_parser("run", help="bake off a swarm from a recipe (returns immediately)")
