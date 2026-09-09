@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from . import runner
+from . import report as bake_report_mod
 
 EXAMPLE_RECIPE = """\
 [bakery]
@@ -75,6 +76,18 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("run_id")
     p.add_argument("--format", choices=["markdown", "text"], default="markdown")
     p.set_defaults(fn=lambda a: runner.collect(a.run_id, a.format))
+
+    p = sub.add_parser("report", help="fan out a recipe, wait, merge a sanitized report, deliver")
+    p.add_argument("recipe", help="recipe TOML file")
+    p.add_argument("--id", dest="run_id", default=None, help="run id (default: generated)")
+    p.add_argument("--format", choices=["markdown", "text"], default="markdown")
+    p.add_argument("--out", default=None, help="write the report to this file (default: stdout)")
+    p.add_argument("--timeout", type=float, default=None, help="overall wait deadline in seconds")
+    p.set_defaults(
+        fn=lambda a: print(
+            bake_report_mod.bake_report(a.recipe, a.run_id, a.format, a.out, a.timeout), end=""
+        )
+    )
 
     p = sub.add_parser("_supervise", help=argparse.SUPPRESS)
     p.add_argument("run_id")
