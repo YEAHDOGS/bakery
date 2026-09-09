@@ -40,6 +40,11 @@ python -m bakery collect <run-id> --format markdown
 # one command: fan out, wait, merge a *sanitized* report, deliver
 python -m bakery report .bakery/tasks/hello.toml --out report.md
 
+# merge mode: <run-id> of a completed run -> one merged report
+# (deduped corroborated findings, conflicts flagged with agent attribution,
+#  per-agent detail preserved). Use for runs baked by other tools too.
+python -m bakery report <run-id> --out merged.md
+
 # retry just the failures of a finished run (new <run-id>-retryN run)
 python -m bakery retry <run-id>
 
