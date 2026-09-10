@@ -25,6 +25,12 @@
       skipped, never touched).
 - [ ] Agent `depends_on` — run the aggregation agent only after the swarm
       finishes (the org-audit "coordinator compile" step as a first-class agent).
+- [x] **Audit trail** (2026-09-09: VISION.md security task 4 — every run
+      writes append-only `<run-id>/audit.jsonl`: run.started, agent.launched
+      (pid/pgid/timeout/cmd/env names only), agent.finished, agent.killed,
+      run.killed, run.finished, retry.created; `bake audit <run-id>`
+      renders the timeline with `--agent`/`--event` filters; corrupt lines
+      skipped on read).
 - [ ] Timeout granularity: warn (SIGTERM) a few seconds before SIGKILL.
 
 ## Bigger bets

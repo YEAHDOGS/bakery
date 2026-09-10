@@ -28,6 +28,9 @@ python -m bakery status <run-id>
 # per-agent logs
 python -m bakery logs <run-id> analyzer-3
 
+# audit trail: who did what, when (filters: --agent, --event)
+python -m bakery audit <run-id> --event agent.finished
+
 The merge treats agent output as **untrusted**: fence-breaks are escaped,
 ANSI/control characters stripped, secret-shaped values redacted
 (`guard.redact_secrets`), and per-agent output length-capped — so one
@@ -101,6 +104,7 @@ See `examples/` for runnable recipes, including `org-audit.toml` — the paralle
 recipe.toml ──▶ bake run ──▶ .bakery/runs/<id>/
                                    ├── recipe.toml      (frozen copy)
                                    ├── meta.json        (pids, status, timing)
+                                   ├── audit.jsonl      (append-only audit trail: who did what, when)
                                    └── agents/
                                        ├── <name>.out  (stdout)
                                        ├── <name>.err  (stderr)
@@ -111,7 +115,7 @@ The CLI is a thin orchestrator over the `shell` backend today. Backends are plug
 
 ## Roadmap
 
-Short-term: recipe validation errors with line numbers, `--watch` streaming status. Shipped: JSON output mode for scripting (`bake status --format json`, `bake collect --format json`; the JSON collect embeds sanitized agent output), `bake retry <run-id>` — re-runs only the failed/timed-out agents of a finished run as a new `<run-id>-retry<N>` run, and `bake clean [--keep N] [--dry-run]` — prune old run directories (active runs never deleted). Longer-term: real agent backends and a web dashboard. Full list in `docs/ROADMAP.md`.
+Short-term: recipe validation errors with line numbers, `--watch` streaming status. Shipped: JSON output mode for scripting (`bake status --format json`, `bake collect --format json`; the JSON collect embeds sanitized agent output), `bake retry <run-id>` — re-runs only the failed/timed-out agents of a finished run as a new `<run-id>-retry<N>` run, `bake clean [--keep N] [--dry-run]` — prune old run directories (active runs never deleted), and `bake audit <run-id>` — an append-only per-run audit trail answering "who did what, when" (env values never recorded, only names; supervisor secrets provably absent). Longer-term: real agent backends and a web dashboard. Full list in `docs/ROADMAP.md`.
 
 ## Security
 
@@ -126,6 +130,11 @@ Short-term: recipe validation errors with line numbers, `--watch` streaming stat
   (PATH, HOME, LANG, ... plus the recipe's guard-vetted `env`) and drops
   everything else, including secret-shaped values. An exported token in your
   shell can't leak to a worker.
+- **Audit trail.** Every run writes `<run-id>/audit.jsonl` — one JSON event
+  per line for run start, agent launch (pid/pgid/timeout/command), agent
+  finish/timeout, kill, retry, and run end. `bake audit <run-id>` renders it
+  as a timeline (`--agent`, `--event` filters). The audit log never records
+  env *values* — only names — so it can't become a secret leak of its own.
 
 ## License
 
