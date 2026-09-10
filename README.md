@@ -94,6 +94,15 @@ env = { ORG = "YEAHDOGS" }
 name = "repo-phoenix"
 cmd = ["bash", "-lc", "analyze-repo phoenix"]
 timeout = 600
+
+# A merge step runs only after the analyzers finish — depends_on names
+# agents that must reach a terminal state first. A failed dependency still
+# unblocks the dependent (the merge runs over whatever exists).
+[[agents]]
+name = "merge-reports"
+cmd = ["bash", "-lc", "bake report $BAKE_RUN_ID"]
+timeout = 300
+depends_on = ["repo-bakery", "repo-phoenix"]
 ```
 
 See `examples/` for runnable recipes, including `org-audit.toml` — the parallel-audit pattern: N analyzers plus an aggregation step.
