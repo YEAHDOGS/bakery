@@ -19,7 +19,8 @@ recipe.toml ──▶ bake run ──▶ supervisor (detached) ──▶ N agent
 - **CLI** (`bakery/__main__.py`) — parses commands, never blocks on agents.
 - **Supervisor** (`runner._supervise`) — a detached process started by `bake run`.
   Launches agents in waves capped by `max_parallel`, polls each second,
-  enforces per-agent timeouts with `killpg`, and records outcomes.
+  enforces per-agent timeouts in two phases — SIGTERM warning, then SIGKILL
+  after `timeout_grace` seconds (recipe-configurable, default 5) — and records outcomes.
 - **Run directory** — the entire state of a run is files. `status`, `logs`,
   `kill`, and `collect` are just readers/writers of `meta.json` and the
   `agents/` logs, so plain tools (`cat`, `jq`, `tail -f`) work on a live run.

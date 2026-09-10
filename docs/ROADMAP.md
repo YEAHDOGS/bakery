@@ -31,7 +31,14 @@
       run.killed, run.finished, retry.created; `bake audit <run-id>`
       renders the timeline with `--agent`/`--event` filters; corrupt lines
       skipped on read).
-- [ ] Timeout granularity: warn (SIGTERM) a few seconds before SIGKILL.
+- [x] Timeout granularity: warn (SIGTERM) a few seconds before SIGKILL
+      (2026-09-09: per-agent `timeout_grace` in seconds, default 5; over-budget
+      agent gets SIGTERM first and `timeout_grace`s to exit cleanly; if it
+      ignores SIGTERM the supervisor sends SIGKILL to the process group; the
+      outcome is still `state=timeout, exit=-1`, and the audit trail records
+      `agent.timeout_warn` plus `terminated_by=sigterm|sigkill` on
+      `agent.finished`; `bake retry` preserves `timeout_grace` in its frozen
+      recipe).
 
 ## Bigger bets
 
