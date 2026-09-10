@@ -111,7 +111,15 @@ def _detail_for(ev: dict) -> str:
         env = ",".join(str(e) for e in ev.get("env") or [])
         return f"pid={ev.get('pid')} pgid={ev.get('pgid')} timeout={ev.get('timeout')}s cmd=[{cmd}] env=[{env}]"
     if name == "agent.finished":
-        return f"state={ev.get('state')} exit={ev.get('exit_code')} duration={ev.get('duration_s')}s"
+        detail = f"state={ev.get('state')} exit={ev.get('exit_code')} duration={ev.get('duration_s')}s"
+        if ev.get("terminated_by"):
+            detail += f" terminated_by={ev['terminated_by']}"
+        return detail
+    if name == "agent.timeout_warn":
+        return (
+            f"timeout={ev.get('timeout')}s SIGTERM sent, "
+            f"SIGKILL in {ev.get('grace')}s if still running"
+        )
     if name == "agent.killed":
         return f"killed by {ev.get('actor')}"
     if name == "run.killed":

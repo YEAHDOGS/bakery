@@ -146,6 +146,7 @@ def _supervise(run_id: str) -> None:
 
     pending = list(recipe.agents)
     running: dict[str, subprocess.Popen] = {}
+    warned: dict[str, float] = {}  # agent name -> monotonic time its SIGTERM was sent
 
     def launch(agent) -> None:
         # Least privilege: the agent gets a sandboxed environment, never the
@@ -184,7 +185,7 @@ def _supervise(run_id: str) -> None:
         )
         print(f"[{_now()}] launched {agent.name} pid={proc.pid}", flush=True)
 
-    def finish(name: str, state: str, code: int | None) -> None:
+    def finish(name: str, state: str, code: int | None, terminated_by: str | None = None) -> None:
         meta = _load_meta(run_id)
         if meta["agents"][name]["state"] == "killed":
             return  # `bake kill` already recorded the outcome; don't clobber it
@@ -197,13 +198,29 @@ def _supervise(run_id: str) -> None:
             fields["duration_s"] = round((t1 - t0).total_seconds(), 1)
         _update_agent(run_id, name, **fields)
         (run_dir / "agents" / f"{name}.code").write_text(str(code if code is not None else -1))
+        event_fields = {"state": state, "exit_code": code, "duration_s": fields.get("duration_s")}
+        if terminated_by:
+            event_fields["terminated_by"] = terminated_by
+        _audit.append_event(run_id, "agent.finished", agent=name, **event_fields)
+
+    def warn_timeout(name: str, fresh: dict, agent) -> None:
+        """SIGTERM warning: give an over-budget agent `timeout_grace` seconds
+        to shut down cleanly before the supervisor sends SIGKILL."""
+        try:
+            os.killpg(fresh["pgid"], signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+        warned[name] = time.monotonic()
         _audit.append_event(
             run_id,
-            "agent.finished",
+            "agent.timeout_warn",
             agent=name,
-            state=state,
-            exit_code=code,
-            duration_s=fields.get("duration_s"),
+            timeout=agent.timeout,
+            grace=agent.timeout_grace,
+        )
+        print(
+            f"[{_now()}] timeout {name}: SIGTERM sent, SIGKILL in {agent.timeout_grace}s",
+            flush=True,
         )
 
     by_name = {a.name: a for a in recipe.agents}
@@ -216,19 +233,30 @@ def _supervise(run_id: str) -> None:
                 agent = by_name[name]
                 rc = proc.poll()
                 if rc is not None:
-                    finish(name, "done", rc)
+                    if name in warned:
+                        # Over budget: it died during the SIGTERM grace window,
+                        # so it shut itself down — still a timeout, honest exit.
+                        finish(name, "timeout", -1, terminated_by="sigterm")
+                        del warned[name]
+                    else:
+                        finish(name, "done", rc)
                     del running[name]
                     continue
                 fresh = _load_meta(run_id)["agents"][name]
                 t0 = datetime.fromisoformat(fresh["started_at"])
                 elapsed = (datetime.now(timezone.utc) - t0).total_seconds()
-                if elapsed > agent.timeout:
+                if name not in warned:
+                    if elapsed > agent.timeout:
+                        warn_timeout(name, fresh, agent)
+                elif elapsed > agent.timeout + agent.timeout_grace:
+                    # Grace window expired: the agent ignored SIGTERM.
                     try:
                         os.killpg(fresh["pgid"], signal.SIGKILL)
                     except (ProcessLookupError, PermissionError):
                         pass
                     proc.wait()
-                    finish(name, "timeout", -1)
+                    finish(name, "timeout", -1, terminated_by="sigkill")
+                    del warned[name]
                     del running[name]
     finally:
         meta = _load_meta(run_id)
@@ -346,6 +374,7 @@ def _dump_recipe_toml(recipe: Recipe, agents: list) -> str:
             f"name = {_toml_escape(a.name)}",
             "cmd = [" + ", ".join(_toml_escape(c) for c in a.cmd) + "]",
             f"timeout = {a.timeout}",
+            f"timeout_grace = {a.timeout_grace}",
             f"workdir = {_toml_escape(a.workdir)}",
             "env = {"
             + ", ".join(f"{_toml_escape(k)} = {_toml_escape(v)}" for k, v in a.env.items())

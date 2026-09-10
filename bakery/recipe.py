@@ -11,6 +11,7 @@ A recipe is a TOML file:
     name = "repo-bakery"   # required, unique within the recipe
     cmd = ["bash", "-lc", "analyze-repo bakery"]   # required for shell backend
     timeout = 600          # optional seconds, default 3600
+    timeout_grace = 5      # optional seconds of SIGTERM grace before SIGKILL, default 5
     workdir = "."          # optional
     env = { FOO = "bar" }  # optional extra environment
 """
@@ -26,6 +27,7 @@ class AgentSpec:
     name: str
     cmd: list[str]
     timeout: int = 3600
+    timeout_grace: int = 5  # SIGTERM warning window before SIGKILL on timeout
     workdir: str = "."
     env: dict = field(default_factory=dict)
 
@@ -66,11 +68,18 @@ def load_recipe(path: str) -> Recipe:
         seen.add(aname)
         if backend == "shell" and (not cmd or not isinstance(cmd, list)):
             raise ValueError(f"recipe {path}: agent '{aname}' needs cmd = [...] for shell backend")
+        try:
+            grace = int(raw.get("timeout_grace", 5))
+        except (TypeError, ValueError):
+            raise ValueError(f"recipe {path}: agent '{aname}' needs an integer 'timeout_grace'")
+        if grace < 0:
+            raise ValueError(f"recipe {path}: agent '{aname}' needs timeout_grace >= 0")
         agents.append(
             AgentSpec(
                 name=aname,
                 cmd=list(cmd) if cmd else [],
                 timeout=int(raw.get("timeout", 3600)),
+                timeout_grace=grace,
                 workdir=str(raw.get("workdir", ".")),
                 env=dict(raw.get("env", {})),
             )
