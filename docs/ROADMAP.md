@@ -23,8 +23,14 @@
       `bake clean [--keep N] [--dry-run]`; active runs are never deleted and
       don't count against `--keep`; dirs without a readable meta.json are
       skipped, never touched).
-- [ ] Agent `depends_on` — run the aggregation agent only after the swarm
-      finishes (the org-audit "coordinator compile" step as a first-class agent).
+- [x] Agent `depends_on` — run the aggregation agent only after the swarm
+      finishes (2026-09-09: per-agent `depends_on = [...]`; the supervisor
+      launches an agent only after every named dependency reaches a terminal
+      state — done/timeout/killed; a FAILED dep still unblocks, so the merge
+      agent runs over whatever the swarm produced; cycles/self-deps/unknown
+      names are rejected at recipe load; `bake status` shows blocked agents
+      as `waiting` (text) / `waiting_for` (JSON); `bake retry` keeps only deps
+      that are also being retried in the frozen retry recipe).
 - [x] **Audit trail** (2026-09-09: VISION.md security task 4 — every run
       writes append-only `<run-id>/audit.jsonl`: run.started, agent.launched
       (pid/pgid/timeout/cmd/env names only), agent.finished, agent.killed,

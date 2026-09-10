@@ -14,6 +14,7 @@ agents (batching up to max_parallel) and records everything.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import shutil
@@ -144,6 +145,18 @@ def _supervise(run_id: str) -> None:
     meta["status"] = "running"
     _save_meta(run_id, meta)
 
+    # An agent with depends_on only launches after every named dependency has
+    # reached a terminal state (done/timeout/killed/unknown). A dependency
+    # that FAILED still unblocks its dependents: the classic use is an
+    # aggregation agent that merges whatever the swarm produced, and it must
+    # run even when some agents failed — waiting on success would wedge the
+    # whole run. Cycles can't exist (recipe validation rejects them), so a
+    # pending agent always becomes launchable once its deps terminate.
+
+    def deps_ready(agent, meta: dict) -> bool:
+        states = meta["agents"]
+        return all(states[d]["state"] in _TERMINAL_STATES for d in agent.depends_on)
+
     pending = list(recipe.agents)
     running: dict[str, subprocess.Popen] = {}
     warned: dict[str, float] = {}  # agent name -> monotonic time its SIGTERM was sent
@@ -226,8 +239,23 @@ def _supervise(run_id: str) -> None:
     by_name = {a.name: a for a in recipe.agents}
     try:
         while pending or running:
-            while pending and len(running) < recipe.max_parallel:
-                launch(pending.pop(0))
+            # Dependency-aware wave: launch a pending agent only when its
+            # dependencies are all terminal; unready agents stay queued.
+            fresh_meta = _load_meta(run_id)
+            while len(running) < recipe.max_parallel:
+                idx = next(
+                    (i for i, a in enumerate(pending) if deps_ready(a, fresh_meta)),
+                    None,
+                )
+                if idx is None:
+                    break
+                agent = pending.pop(idx)
+                launch(agent)
+                if agent.depends_on:
+                    print(
+                        f"[{_now()}] {agent.name} unblocked (deps: {', '.join(agent.depends_on)})",
+                        flush=True,
+                    )
             time.sleep(1)
             for name, proc in list(running.items()):
                 agent = by_name[name]
@@ -278,6 +306,31 @@ def refresh_status(meta: dict) -> dict:
     return meta
 
 
+_TERMINAL_STATES = {"done", "timeout", "killed", "unknown"}
+
+
+def _waiting_deps(run_id: str, meta: dict) -> dict[str, list[str]]:
+    """Map pending agent -> dependency names not yet in a terminal state.
+
+    A pending agent whose deps are all terminal would launch on the
+    supervisor's next tick; one with unmet deps is genuinely blocked —
+    `bake status` renders it as 'waiting' so a stalled swarm is visible.
+    """
+    try:
+        recipe = load_recipe(str(runs_root() / run_id / "recipe.toml"))
+    except Exception:
+        return {}
+    waiting: dict[str, list[str]] = {}
+    for agent in recipe.agents:
+        st = meta["agents"].get(agent.name, {})
+        if st.get("state") != "pending":
+            continue
+        unmet = [d for d in agent.depends_on if meta["agents"][d]["state"] not in _TERMINAL_STATES]
+        if unmet:
+            waiting[agent.name] = unmet
+    return waiting
+
+
 def render_status(run_id: str, fmt: str = "text") -> str:
     """Render a run's status as a string (text table or JSON for scripting)."""
     meta = _load_meta(run_id)
@@ -285,7 +338,11 @@ def render_status(run_id: str, fmt: str = "text") -> str:
     meta = refresh_status(meta)
     if json.dumps(meta["agents"], sort_keys=True) != before:
         _save_meta(run_id, meta)
+    waiting = _waiting_deps(run_id, meta)
     if fmt == "json":
+        meta = json.loads(json.dumps(meta))  # deep copy; meta.json itself keeps the stored schema
+        for name, deps in waiting.items():
+            meta["agents"][name]["waiting_for"] = deps
         return json.dumps(meta, indent=2, sort_keys=True) + "\n"
     lines = [
         f"run {meta['run_id']}  recipe={meta['recipe']}  status={meta['status']}",
@@ -294,7 +351,8 @@ def render_status(run_id: str, fmt: str = "text") -> str:
     for name, st in meta["agents"].items():
         dur = f"{st['duration_s']}s" if st["duration_s"] is not None else "-"
         code = str(st["exit_code"]) if st["exit_code"] is not None else "-"
-        lines.append(f"{name:<24}{st['state']:<10}{code:<6}{dur:<10}{st['pid'] or '-'}")
+        state = "waiting" if name in waiting else st["state"]
+        lines.append(f"{name:<24}{state:<10}{code:<6}{dur:<10}{st['pid'] or '-'}")
     return "\n".join(lines) + "\n"
 
 
@@ -375,6 +433,12 @@ def _dump_recipe_toml(recipe: Recipe, agents: list) -> str:
             "cmd = [" + ", ".join(_toml_escape(c) for c in a.cmd) + "]",
             f"timeout = {a.timeout}",
             f"timeout_grace = {a.timeout_grace}",
+        ]
+        if a.depends_on:
+            lines.append(
+                "depends_on = [" + ", ".join(_toml_escape(d) for d in a.depends_on) + "]"
+            )
+        lines += [
             f"workdir = {_toml_escape(a.workdir)}",
             "env = {"
             + ", ".join(f"{_toml_escape(k)} = {_toml_escape(v)}" for k, v in a.env.items())
@@ -402,6 +466,15 @@ def retry_run(run_id: str) -> str | None:
     if not retry_agents:
         print(f"nothing to retry in run '{run_id}': no failed or timed-out agents")
         return None
+    # A retried agent only waits on deps that are ALSO being retried: deps
+    # that already finished in the original run don't need waiting again, and
+    # keeping them would name agents absent from the retry's frozen recipe
+    # (which must validate cleanly when the retry's supervisor loads it).
+    retry_names = {a.name for a in retry_agents}
+    retry_agents = [
+        dataclasses.replace(a, depends_on=[d for d in a.depends_on if d in retry_names])
+        for a in retry_agents
+    ]
     guard_recipe(Recipe(recipe.name, recipe.backend, recipe.max_parallel, retry_agents))
     n = 1
     while (runs_root() / f"{run_id}-retry{n}").exists():

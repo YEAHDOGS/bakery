@@ -31,3 +31,12 @@ name = "repo-castle"
 cmd = ["bash", "-lc", "analyze-repo \"$REPO\""]
 env = { REPO = "castle" }
 timeout = 1800
+
+# The aggregation step as a first-class agent: it waits for the analyzers,
+# then merges their outputs into one report. (Depends-on agents still run
+# when a dependency fails — the merge works with whatever exists.)
+[[agents]]
+name = "compile-report"
+cmd = ["bash", "-lc", "bake collect \"$BAKE_RUN_ID\" > audit-report.md"]
+timeout = 600
+depends_on = ["repo-bakery", "repo-phoenix", "repo-castle"]
