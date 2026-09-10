@@ -9,6 +9,7 @@ from pathlib import Path
 from . import runner
 from . import report as bake_report_mod
 from . import scaffold
+from . import audit as audit_mod
 
 
 def cmd_report(args) -> None:
@@ -101,6 +102,12 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--keep", type=int, default=10, help="finished runs to keep (default: 10)")
     p.add_argument("--dry-run", action="store_true", help="list what would be pruned, delete nothing")
     p.set_defaults(fn=lambda a: cmd_clean(a))
+
+    p = sub.add_parser("audit", help="show a run's audit trail (who did what, when)")
+    p.add_argument("run_id")
+    p.add_argument("--agent", default=None, help="show only events for this agent")
+    p.add_argument("--event", default=None, help="show only events of this type")
+    p.set_defaults(fn=lambda a: print(audit_mod.render_audit(a.run_id, a.agent, a.event), end=""))
 
     p = sub.add_parser("_supervise", help=argparse.SUPPRESS)
     p.add_argument("run_id")

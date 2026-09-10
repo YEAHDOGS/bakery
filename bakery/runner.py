@@ -26,8 +26,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .recipe import Recipe, load_recipe
-from .guard import guard_recipe
+from .guard import guard_recipe, redact_secrets
 from .sandbox import sandboxed_env
+from . import audit as _audit
 
 
 def runs_root() -> Path:
@@ -110,6 +111,19 @@ def _launch_run(recipe: Recipe, run_id: str, recipe_text: str, retried_from: str
     }
     _save_meta(run_id, meta)
 
+    # audit trail (VISION.md: "who did what, when" for every run). Only env
+    # var NAMES are recorded, never values; the guard already refused any
+    # secret-bearing recipe, and belt-and-suspenders redaction applies anyway.
+    _audit.append_event(
+        run_id,
+        "run.started",
+        actor="operator",
+        recipe=recipe.name,
+        backend=recipe.backend,
+        agents=len(recipe.agents),
+        retried_from=retried_from,
+    )
+
     log = open(run_dir / "supervisor.log", "w")
     subprocess.Popen(
         [sys.executable, "-m", "bakery", "_supervise", run_id],
@@ -157,6 +171,17 @@ def _supervise(run_id: str) -> None:
             state="running",
             started_at=_now(),
         )
+        _audit.append_event(
+            run_id,
+            "agent.launched",
+            agent=agent.name,
+            pid=proc.pid,
+            pgid=os.getpgid(proc.pid),
+            timeout=agent.timeout,
+            workdir=agent.workdir,
+            cmd=[redact_secrets(str(c)) for c in agent.cmd],
+            env=sorted(str(k) for k in agent.env.keys()),  # names only, never values
+        )
         print(f"[{_now()}] launched {agent.name} pid={proc.pid}", flush=True)
 
     def finish(name: str, state: str, code: int | None) -> None:
@@ -172,6 +197,14 @@ def _supervise(run_id: str) -> None:
             fields["duration_s"] = round((t1 - t0).total_seconds(), 1)
         _update_agent(run_id, name, **fields)
         (run_dir / "agents" / f"{name}.code").write_text(str(code if code is not None else -1))
+        _audit.append_event(
+            run_id,
+            "agent.finished",
+            agent=name,
+            state=state,
+            exit_code=code,
+            duration_s=fields.get("duration_s"),
+        )
 
     by_name = {a.name: a for a in recipe.agents}
     try:
@@ -203,6 +236,7 @@ def _supervise(run_id: str) -> None:
             meta["status"] = "done"
             meta["finished_at"] = _now()
             _save_meta(run_id, meta)
+            _audit.append_event(run_id, "run.finished", status="done")
         print(f"[{_now()}] run {run_id} finished", flush=True)
 
 
@@ -260,14 +294,17 @@ def kill(run_id: str) -> None:
                 killed.append(name)
                 st["state"] = "killed"
                 st["finished_at"] = _now()
+                _audit.append_event(run_id, "agent.killed", actor="operator", agent=name)
             except (ProcessLookupError, PermissionError):
                 pass
         elif st["state"] == "pending":
             st["state"] = "killed"
             killed.append(name)
+            _audit.append_event(run_id, "agent.killed", actor="operator", agent=name)
     meta["status"] = "killed"
     meta["finished_at"] = _now()
     _save_meta(run_id, meta)
+    _audit.append_event(run_id, "run.killed", actor="operator", killed=len(killed), agents=sorted(killed))
     print(f"killed {len(killed)} agents in run {run_id}: {', '.join(killed) or 'none'}")
 
 
@@ -343,6 +380,13 @@ def retry_run(run_id: str) -> str | None:
     new_id = f"{run_id}-retry{n}"
     sub_recipe = Recipe(recipe.name, recipe.backend, recipe.max_parallel, retry_agents)
     new_id = _launch_run(sub_recipe, new_id, _dump_recipe_toml(recipe, retry_agents), run_id)
+    _audit.append_event(
+        new_id,
+        "retry.created",
+        actor="operator",
+        retried_from=run_id,
+        agents=[a.name for a in retry_agents],
+    )
     print(f"retrying {len(retry_agents)} of {len(recipe.agents)} agents from run '{run_id}'")
     return new_id
 

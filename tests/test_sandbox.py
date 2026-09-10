@@ -70,8 +70,10 @@ class SandboxLaunchTest(unittest.TestCase):
         self.addCleanup(os.chdir, self.old_cwd)
         os.chdir(self.tmp.name)
         self.old_environ = dict(os.environ)
-        self.addCleanup(os.environ.clear)
+        # LIFO order: clear runs first, then restore — the reverse order
+        # wipes os.environ entirely and breaks later tests in the suite.
         self.addCleanup(os.environ.update, self.old_environ)
+        self.addCleanup(os.environ.clear)
         os.environ["GITHUB_TOKEN"] = self.FAKE_TOKEN
         os.environ["SOME_LEAKY_EXPORT"] = "should-not-reach-agent"
         # The detached supervisor re-execs `python -m bakery` with this CWD;
