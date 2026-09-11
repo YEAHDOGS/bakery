@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bakery: one command bakes a swarm of agents</title>
+<meta name="description" content="Bakery orchestrates parallel agents from one recipe file, supervises the swarm, and merges output into one report. Stdlib only, zero deps.">
+<link rel="canonical" href="https://yeahdogs.github.io/bakery/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Bakery">
+<meta property="og:title" content="Bakery: one command bakes a swarm of agents">
+<meta property="og:description" content="Describe the mission once. Bakery fans it out to parallel agents, supervises them, and merges the results into one report.">
+<meta property="og:url" content="https://yeahdogs.github.io/bakery/">
+<meta property="og:image" content="https://yeahdogs.github.io/bakery/assets/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="A dark kitchen oven radiating ember light, a swarm of glowing particles spiraling upward">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Bakery: one command bakes a swarm of agents">
+<meta name="twitter:description" content="One recipe in, a swarm of agents out, one merged report back.">
+<meta name="twitter:image" content="https://yeahdogs.github.io/bakery/assets/og.jpg">
+<meta name="theme-color" content="#141009">
+<link rel="icon" type="image/svg+xml" href="/bakery/favicon.svg">
+<link rel="apple-touch-icon" href="/bakery/assets/apple-touch-icon.png">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Bakery","url":"https://yeahdogs.github.io/bakery/","applicationCategory":"DeveloperApplication","operatingSystem":"Linux, macOS, Windows","license":"https://github.com/YEAHDOGS/bakery/blob/master/LICENSE","description":"Stdlib-only CLI that orchestrates parallel agents from a recipe file, supervises them, and merges their output into one report."}
+</script>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[
+{"@type":"Question","name":"What is Bakery?","acceptedAnswer":{"@type":"Answer","text":"Bakery is a command-line tool that orchestrates parallel agents. You describe a swarm in one recipe file; Bakery launches the agents, supervises them, and merges their output into a single report."}},
+{"@type":"Question","name":"What do I need to install?","acceptedAnswer":{"@type":"Answer","text":"Nothing beyond Python 3.11 and the source. Bakery is stdlib only: no dependencies, no daemon, no cloud."}},
+{"@type":"Question","name":"Do agents get my credentials?","acceptedAnswer":{"@type":"Answer","text":"No. Agents run sandboxed with least privilege. Secrets are never pasted across agent boundaries; a credential is injected at the narrowest scope or the task does not run."}},
+{"@type":"Question","name":"Can Bakery run Kite, Claude, and Gemini as agents?","acceptedAnswer":{"@type":"Answer","text":"Not yet. That is the roadmap: pluggable adapters behind one run and collect interface. Today the shell backend runs commands as agents."}},
+{"@type":"Question","name":"Where do results live?","acceptedAnswer":{"@type":"Answer","text":"In a run directory with per-agent logs, exit codes, and timing. bake collect merges everything into one markdown report."}}
+]}
+</script>
+<style>
+:root{
+  --bg:#141009; --bg2:#1a130c; --card:#20170e; --inset:#120d07;
+  --line:#352717; --cream:#f4e8d3; --muted:#c3ab86; --dim:#94805f;
+  --ember:#e8932f; --hot:#ffb04d; --ok:#9dbb7a;
+  --serif:Georgia,'Times New Roman',serif;
+  --mono:ui-monospace,'SF Mono',SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{background:var(--bg);color:var(--cream);font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+::selection{background:var(--ember);color:#141009}
+a{color:var(--ember);text-decoration:none}
+a:hover{color:var(--hot)}
+.wrap{max-width:960px;margin:0 auto;padding:0 20px}
+.skip{position:absolute;left:-9999px;top:0;background:var(--ember);color:#141009;padding:10px 16px;z-index:100;border-radius:0 0 8px 0}
+.skip:focus{left:0}
+/* nav */
+.nav{position:sticky;top:0;z-index:50;background:rgba(20,16,9,.88);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.nav .wrap{display:flex;align-items:center;gap:18px;height:58px}
+.brand{font-family:var(--serif);font-size:1.25rem;letter-spacing:.14em;color:var(--cream);font-weight:700}
+.brand small{font-family:var(--mono);font-size:.6rem;letter-spacing:.08em;color:var(--dim);display:block;line-height:1;margin-top:2px}
+.nav-links{display:flex;gap:16px;margin-left:auto;font-size:.82rem}
+.nav-links a{color:var(--muted)}
+.nav-links a:hover{color:var(--cream)}
+@media(max-width:640px){.nav-links a:not(:last-child){display:none}}
+.btn{display:inline-block;background:var(--ember);color:#181008;font-weight:700;font-size:.9rem;padding:12px 22px;border-radius:10px;border:0;cursor:pointer;transition:transform .18s ease,background .18s ease;white-space:nowrap}
+.btn:hover{background:var(--hot);color:#181008}
+.btn:active{transform:scale(.97)}
+.btn.ghost{background:transparent;color:var(--cream);border:1px solid var(--line)}
+.btn.ghost:hover{border-color:var(--ember);color:var(--hot)}
+/* hero */
+.hero{padding:72px 0 48px;position:relative}
+.eyebrow{font-family:var(--mono);font-size:.68rem;letter-spacing:.22em;color:var(--ember);margin-bottom:18px}
+.hero h1{font-family:var(--serif);font-weight:700;font-size:2.7rem;line-height:1.08;letter-spacing:-.01em;margin-bottom:20px}
+.hero h1 em{font-style:italic;color:var(--hot)}
+.lede{font-size:1.06rem;color:var(--muted);max-width:34rem;margin-bottom:30px}
+.hero-ctas{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:28px}
+.zero{font-family:var(--mono);font-size:.72rem;letter-spacing:.12em;color:var(--dim);border-top:1px solid var(--line);padding-top:16px;max-width:34rem}
+.zero b{color:var(--muted);font-weight:600}
+@media(min-width:720px){.hero{padding:110px 0 70px}.hero h1{font-size:4.1rem}}
+/* sections */
+section.block{padding:56px 0}
+.kicker{font-family:var(--mono);font-size:.68rem;letter-spacing:.22em;color:var(--ember);margin-bottom:12px}
+h2.st{font-family:var(--serif);font-size:1.9rem;line-height:1.15;margin-bottom:10px}
+.sub{color:var(--muted);max-width:36rem;margin-bottom:30px}
+/* oven demo */
+.oven{background:var(--inset);border:1px solid var(--line);border-radius:18px;padding:22px;position:relative;overflow:hidden}
+.oven-top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px;flex-wrap:wrap}
+.oven-status{font-family:var(--mono);font-size:.78rem;color:var(--muted);min-height:1.4em}
+.oven-status.live{color:var(--hot)}
+.embers{display:grid;grid-template-columns:repeat(12,1fr);gap:8px;margin-bottom:20px}
+.ember{aspect-ratio:1;border-radius:50%;background:#3a2b18;opacity:.35;transform:scale(.7);transition:opacity .5s ease,transform .5s ease,background .5s ease}
+.ember.lit{background:radial-gradient(circle at 40% 35%,var(--hot),var(--ember) 70%);opacity:1;transform:scale(1)}
+.oven.hot .ember{animation:flick 1.6s ease-in-out infinite}
+@keyframes flick{0%,100%{filter:brightness(1)}50%{filter:brightness(1.35)}}
+.agents{display:grid;gap:10px;margin-bottom:20px}
+.agent{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;display:grid;grid-template-columns:110px 1fr auto;gap:12px;align-items:center}
+.agent .nm{font-family:var(--mono);font-size:.78rem;color:var(--muted)}
+.agent .bar{height:6px;background:#0e0a06;border-radius:4px;overflow:hidden}
+.agent .fill{display:block;height:100%;width:100%;background:linear-gradient(90deg,var(--ember),var(--hot));border-radius:4px;transform:scaleX(0);transform-origin:left}
+.agent.running .nm{color:var(--cream)}
+.agent.running .fill{transition:transform 1.15s linear;transform:scaleX(1)}
+.agent.done .fill{transform:scaleX(1);transition:none;background:var(--ok)}
+.pill{font-family:var(--mono);font-size:.62rem;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);border:1px solid var(--line);border-radius:20px;padding:3px 10px}
+.agent.running .pill{color:var(--hot);border-color:var(--ember)}
+.agent.done .pill{color:var(--ok);border-color:var(--ok)}
+.report{display:none;background:#0f0b07;border:1px solid var(--ember);border-radius:12px;padding:16px 18px;margin-bottom:20px}
+.report.show{display:block;animation:rise .6s ease}
+@keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+.report .rh{font-family:var(--mono);font-size:.68rem;letter-spacing:.18em;color:var(--ember);margin-bottom:10px}
+.report pre{font-family:var(--mono);font-size:.78rem;line-height:1.7;color:var(--cream);white-space:pre-wrap}
+.report pre .cm{color:var(--dim)}
+.oven-ctl{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.demo-note{font-size:.72rem;color:var(--dim)}
+@media(min-width:720px){.agents{grid-template-columns:1fr 1fr}.oven{padding:30px}}
+/* how it works */
+.steps{display:grid;gap:14px}
+.step{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;display:grid;gap:8px}
+.step .n{font-family:var(--mono);font-size:.72rem;letter-spacing:.2em;color:var(--ember)}
+.step h3{font-family:var(--serif);font-size:1.25rem}
+.step p{color:var(--muted);font-size:.94rem}
+.step code{font-family:var(--mono);font-size:.82em;background:#0f0b07;border:1px solid var(--line);border-radius:6px;padding:1px 7px;color:var(--hot)}
+@media(min-width:720px){.steps{grid-template-columns:1fr 1fr}}
+/* terminal */
+.term{background:#0d0906;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.term-bar{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.dot{width:10px;height:10px;border-radius:50%;background:#3a2b18}
+.term-bar span.t{font-family:var(--mono);font-size:.72rem;color:var(--dim);margin-left:6px}
+.term pre{padding:20px;font-family:var(--mono);font-size:.82rem;line-height:2;overflow-x:auto;color:var(--cream)}
+.term .p{color:var(--ember);user-select:none}
+.term .c{color:var(--dim)}
+.copyrow{display:flex;gap:12px;align-items:center;margin-top:16px;flex-wrap:wrap}
+.hint{font-size:.8rem;color:var(--dim)}
+/* security */
+.sec-grid{display:grid;gap:14px}
+.sec{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px}
+.sec h3{font-family:var(--serif);font-size:1.15rem;margin-bottom:8px}
+.sec h3 .glyph{display:inline-block;width:14px;height:14px;border-radius:50%;background:var(--ember);margin-right:10px;vertical-align:baseline}
+.sec p{color:var(--muted);font-size:.94rem}
+@media(min-width:720px){.sec-grid{grid-template-columns:1fr 1fr}}
+/* roadmap */
+.road{display:grid;gap:14px}
+.panel{border:1px solid var(--line);border-radius:14px;padding:24px;background:var(--card)}
+.panel.next{border-color:var(--ember);background:#231a0f}
+.panel .tag{font-family:var(--mono);font-size:.66rem;letter-spacing:.22em;margin-bottom:14px;color:var(--dim)}
+.panel.next .tag{color:var(--ember)}
+.panel ul{list-style:none;display:grid;gap:12px}
+.panel li{font-size:.93rem;color:var(--muted);padding-left:22px;position:relative}
+.panel li::before{content:"";position:absolute;left:2px;top:.62em;width:8px;height:8px;border-radius:50%;background:var(--dim)}
+.panel.next li::before{background:var(--ember)}
+.panel li b{color:var(--cream);font-weight:600}
+@media(min-width:720px){.road{grid-template-columns:1fr 1fr}}
+/* faq */
+details.faq{border-bottom:1px solid var(--line);padding:18px 4px}
+details.faq summary{cursor:pointer;font-family:var(--serif);font-size:1.08rem;list-style:none;display:flex;justify-content:space-between;gap:16px;align-items:center}
+details.faq summary::-webkit-details-marker{display:none}
+details.faq summary .pm{font-family:var(--mono);color:var(--ember);font-size:1.2rem;flex-shrink:0;transition:transform .25s ease}
+details.faq[open] summary .pm{transform:rotate(45deg)}
+details.faq p{color:var(--muted);font-size:.94rem;margin-top:12px;max-width:38rem}
+/* footer */
+footer{border-top:1px solid var(--line);padding:44px 0 110px;background:var(--bg2)}
+.fgrid{display:grid;gap:28px;margin-bottom:34px}
+.fcol h4{font-family:var(--mono);font-size:.66rem;letter-spacing:.2em;color:var(--dim);margin-bottom:12px}
+.fcol ul{list-style:none;display:grid;gap:8px;font-size:.88rem}
+.fcol a{color:var(--muted)}
+.fcol a:hover{color:var(--cream)}
+@media(min-width:720px){.fgrid{grid-template-columns:2fr 1fr 1fr 1fr}}
+.fbrand{font-family:var(--serif);font-size:1.4rem;letter-spacing:.1em;margin-bottom:10px}
+.fine{font-size:.8rem;color:var(--dim);border-top:1px solid var(--line);padding-top:22px;display:grid;gap:10px}
+.fine .attr{color:var(--muted)}
+/* sticky mobile cta */
+.sticky-cta{position:fixed;left:0;right:0;bottom:0;z-index:60;background:rgba(20,16,9,.94);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-top:1px solid var(--line);padding:12px 20px calc(12px + env(safe-area-inset-bottom));display:none}
+.sticky-cta .btn{width:100%;text-align:center}
+@media(max-width:679px){.sticky-cta{display:block}}
+/* reveal */
+.rv{opacity:0;transform:translateY(18px);transition:opacity .7s ease,transform .7s ease}
+.rv.in{opacity:1;transform:none}
+/* inner pages */
+.page{padding:56px 0 80px;max-width:40rem}
+.page h1{font-family:var(--serif);font-size:2.2rem;margin:14px 0 18px}
+.page p,.page li{color:var(--muted);margin-bottom:14px;font-size:.96rem}
+.page ul{padding-left:20px}
+.page a{color:var(--ember)}
+.back{display:inline-block;margin-top:26px}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001s!important;transition-duration:.001s!important}
+  html{scroll-behavior:auto}
+  .rv{opacity:1;transform:none}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="/bakery/">BAKERY<small>swarm orchestration</small></a>
+    <nav class="nav-links" aria-label="Sections">
+      <a href="#how">How it works</a>
+      <a href="#security">Security</a>
+      <a href="#roadmap">Roadmap</a>
+      <a href="#faq">FAQ</a>
+      <a href="https://github.com/YEAHDOGS/bakery">GitHub</a>
+    </nav>
+  </div>
+</header>
+<main id="main">
+<section class="hero">
+  <div class="wrap">
+    <p class="eyebrow rv">MULTI-AGENT ORCHESTRATION &middot; STDLIB-ONLY CLI</p>
+    <h1 class="rv">One command<br>bakes a <em>swarm</em>.</h1>
+    <p class="lede rv">Describe the mission once. Bakery fans it out to parallel agents, supervises them, and merges their results into a single report.</p>
+    <div class="hero-ctas rv">
+      <a class="btn" href="#quickstart">Bake your first swarm</a>
+      <a class="btn ghost" href="#how">How it works</a>
+    </div>
+    <p class="zero rv"><b>ZERO</b> dependencies &middot; <b>ZERO</b> daemons &middot; <b>ZERO</b> cloud</p>
+  </div>
+</section>
+<section class="block" id="demo" aria-label="Bake demo">
+  <div class="wrap">
+    <p class="kicker rv">THE OVEN</p>
+    <h2 class="st rv">Watch a bake.</h2>
+    <p class="sub rv">Ten agents, three waves, one merged report. The supervisor caps parallelism, kills runaways on timeout, and collects everything when the last agent lands.</p>
+    <div class="oven rv" id="oven">
+      <div class="oven-top">
+        <p class="oven-status" id="ovenStatus" aria-live="polite">Oven idle. Ready when you are.</p>
+        <span class="demo-note">simulated demo</span>
+      </div>
+      <div class="embers" id="embers" aria-hidden="true"></div>
+      <div class="agents" id="agents" aria-hidden="true"></div>
+      <div class="report" id="report">
+        <p class="rh">COLLECTED &middot; ONE REPORT</p>
+<pre># org-audit &middot; 10 agents &middot; 04:12
+<span class="cm">## findings</span>
+- 7 repos green, 3 need attention
+- 2 flaky tests flagged by analyzer-2
+- credential leak scan: clean
+<span class="cm">merged by bake collect &middot; full logs in .bakery/runs/</span></pre>
+      </div>
+      <div class="oven-ctl">
+        <button class="btn" id="bakeBtn">Bake the swarm</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="how" aria-label="How it works">
+  <div class="wrap">
+    <p class="kicker rv">HOW IT WORKS</p>
+    <h2 class="st rv">Four moves, no magic.</h2>
+    <p class="sub rv">A recipe file plus a run directory. Plain tools like <code style="font-family:var(--mono);font-size:.85em;color:var(--hot)">cat</code>, <code style="font-family:var(--mono);font-size:.85em;color:var(--hot)">jq</code>, and <code style="font-family:var(--mono);font-size:.85em;color:var(--hot)">tail -f</code> work on a live run.</p>
+    <div class="steps">
+      <div class="step rv"><span class="n">01</span><h3>Recipe</h3><p>One TOML file describes the swarm: the agents, their commands, timeouts, and environment.</p></div>
+      <div class="step rv"><span class="n">02</span><h3>Bake</h3><p>One command launches the agents in the background, in waves capped by <code>max_parallel</code>. It returns immediately.</p></div>
+      <div class="step rv"><span class="n">03</span><h3>Supervise</h3><p>A detached supervisor tracks every agent and kills runaways on timeout. Every log, exit code, and timestamp lands in the run directory.</p></div>
+      <div class="step rv"><span class="n">04</span><h3>Collect</h3><p>Merge every agent's output into a single markdown report with <code>bake collect</code>. Done.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="quickstart" aria-label="Quickstart">
+  <div class="wrap">
+    <p class="kicker rv">QUICKSTART</p>
+    <h2 class="st rv">In the oven in a minute.</h2>
+    <p class="sub rv">Python 3.11 or newer. Nothing else to install.</p>
+    <div class="term rv" role="region" aria-label="Bakery quickstart commands">
+      <div class="term-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="t">bakery</span></div>
+<pre id="qs"><span class="p">$</span> python -m bakery init            <span class="c"># scaffold an example recipe</span>
+<span class="p">$</span> python -m bakery run hello.toml  <span class="c"># bake off the swarm</span>
+<span class="p">$</span> python -m bakery status &lt;run-id&gt;  <span class="c"># watch it converge</span>
+<span class="p">$</span> python -m bakery logs &lt;run-id&gt; analyzer-3
+<span class="p">$</span> python -m bakery collect &lt;run-id&gt; --format markdown
+<span class="p">$</span> python -m bakery kill &lt;run-id&gt;   <span class="c"># kill a runaway swarm</span></pre>
+    </div>
+    <div class="copyrow rv">
+      <button class="btn ghost" id="copyBtn">Copy commands</button>
+      <span class="hint">Full source and docs on <a href="https://github.com/YEAHDOGS/bakery">GitHub</a>.</span>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="security" aria-label="Security">
+  <div class="wrap">
+    <p class="kicker rv">SECURITY</p>
+    <h2 class="st rv">The oven door stays shut.</h2>
+    <p class="sub rv">Security is non-negotiable. Workers never touch your credentials, and nothing leaks between agents.</p>
+    <div class="sec-grid">
+      <div class="sec rv"><h3><span class="glyph"></span>Sandboxed agents</h3><p>Agents run with least privilege. A worker never gets your credentials, tokens, or private keys.</p></div>
+      <div class="sec rv"><h3><span class="glyph"></span>Secrets stay sealed</h3><p>Nothing is pasted across agent boundaries. If a task needs a credential, the supervisor injects it at the narrowest scope, or the task does not run.</p></div>
+      <div class="sec rv"><h3><span class="glyph"></span>Everything logged</h3><p>Every agent action is recorded. <code style="font-family:var(--mono);font-size:.85em;color:var(--hot)">bake logs</code> answers who did what, when, for any run.</p></div>
+      <div class="sec rv"><h3><span class="glyph"></span>Reports sanitized</h3><p>Cross-agent traffic is treated as untrusted. Merged output is validated and sanitized at collection time.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="roadmap" aria-label="Roadmap">
+  <div class="wrap">
+    <p class="kicker rv">ROADMAP</p>
+    <h2 class="st rv">Baking today, next in the oven.</h2>
+    <p class="sub rv">The endgame is one command fanning work out to multiple AI agents, then merging their reports automatically. The shell backend is the foundation.</p>
+    <div class="road">
+      <div class="panel rv">
+        <p class="tag">TODAY</p>
+        <ul>
+          <li><b>Stdlib-only CLI.</b> Zero dependencies, zero install friction.</li>
+          <li><b>Shell backend.</b> Agents are commands with captured stdout, stderr, and exit codes.</li>
+          <li><b>Run, status, logs, kill, collect.</b> Full swarm lifecycle from one command.</li>
+          <li><b>Frozen recipes.</b> Every run keeps a copy of the recipe it baked from.</li>
+        </ul>
+      </div>
+      <div class="panel next rv">
+        <p class="tag">NEXT IN THE OVEN</p>
+        <ul>
+          <li><b>Kite, Claude, and Gemini adapters</b> behind the same run and collect interface.</li>
+          <li><b><code style="font-family:var(--mono)">bake report</code>.</b> One command: fan out, collect, merge, deliver.</li>
+          <li><b>Sandbox profiles</b> and secret redaction in logs.</li>
+          <li><b>Web dashboard</b> for watching swarms converge.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="faq" aria-label="Frequently asked questions">
+  <div class="wrap" style="max-width:720px">
+    <p class="kicker rv">FAQ</p>
+    <h2 class="st rv">Asked, answered.</h2>
+    <div style="margin-top:24px">
+      <details class="faq rv"><summary>What is Bakery?<span class="pm">+</span></summary><p>Bakery is a command-line tool that orchestrates parallel agents. You describe a swarm in one recipe file; Bakery launches the agents, supervises them, and merges their output into a single report.</p></details>
+      <details class="faq rv"><summary>What do I need to install?<span class="pm">+</span></summary><p>Nothing beyond Python 3.11 and the source. Bakery is stdlib only: no dependencies, no daemon, no cloud.</p></details>
+      <details class="faq rv"><summary>Do agents get my credentials?<span class="pm">+</span></summary><p>No. Agents run sandboxed with least privilege. Secrets are never pasted across agent boundaries; a credential is injected at the narrowest scope or the task does not run.</p></details>
+      <details class="faq rv"><summary>Can Bakery run Kite, Claude, and Gemini as agents?<span class="pm">+</span></summary><p>Not yet. That is the roadmap: pluggable adapters behind one run and collect interface. Today the shell backend runs commands as agents.</p></details>
+      <details class="faq rv"><summary>Where do results live?<span class="pm">+</span></summary><p>In a run directory with per-agent logs, exit codes, and timing. <span style="font-family:var(--mono)">bake collect</span> merges everything into one markdown report.</p></details>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="fgrid">
+      <div class="fcol">
+        <p class="fbrand">BAKERY</p>
+        <p style="font-size:.85rem;color:var(--dim);max-width:22rem">One command fans work out to a swarm of agents, supervises them, and merges the results into one report.</p>
+      </div>
+      <div class="fcol"><h4>PRODUCT</h4><ul><li><a href="#how">How it works</a></li><li><a href="#quickstart">Quickstart</a></li><li><a href="#security">Security</a></li><li><a href="#roadmap">Roadmap</a></li><li><a href="#faq">FAQ</a></li></ul></div>
+      <div class="fcol"><h4>SOURCE</h4><ul><li><a href="https://github.com/YEAHDOGS/bakery">Repository</a></li><li><a href="https://github.com/YEAHDOGS/bakery/issues">Issues</a></li><li><a href="https://github.com/YEAHDOGS/bakery/blob/master/LICENSE">License</a></li></ul></div>
+      <div class="fcol"><h4>LEGAL</h4><ul><li><a href="/bakery/privacy">Privacy</a></li><li><a href="/bakery/terms">Terms</a></li></ul></div>
+    </div>
+    <div class="fine">
+      <span>No cookies. No tracking. No accounts.</span>
+      <span class="attr">This product was made by <a href="https://wearedogs.net">DOGS</a></span>
+    </div>
+  </div>
+</footer>
+<div class="sticky-cta"><a class="btn" href="#quickstart">Bake your first swarm</a></div>
+<script>
+(function(){
+  "use strict";
+  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* reveal on scroll */
+  var rv = document.querySelectorAll(".rv");
+  if ("IntersectionObserver" in window && !reduce) {
+    var io = new IntersectionObserver(function(es){
+      es.forEach(function(e){ if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } });
+    }, {threshold: .12});
+    rv.forEach(function(el){ io.observe(el); });
+  } else {
+    rv.forEach(function(el){ el.classList.add("in"); });
+  }
+
+  /* oven demo */
+  var AGENTS = ["scout","scout-2","analyzer","analyzer-2","auditor","auditor-2","builder","critic","summarizer","librarian"];
+  var WAVES = [AGENTS.slice(0,4), AGENTS.slice(4,8), AGENTS.slice(8,10)];
+  var EMBERS_PER_WAVE = 8;
+  var embersEl = document.getElementById("embers");
+  var agentsEl = document.getElementById("agents");
+  var statusEl = document.getElementById("ovenStatus");
+  var reportEl = document.getElementById("report");
+  var ovenEl = document.getElementById("oven");
+  var bakeBtn = document.getElementById("bakeBtn");
+  var running = false, timers = [];
+
+  for (var i = 0; i < 24; i++) {
+    var d = document.createElement("span");
+    d.className = "ember";
+    embersEl.appendChild(d);
+  }
+  var emberEls = embersEl.children;
+  var agentRows = AGENTS.map(function(name){
+    var row = document.createElement("div");
+    row.className = "agent";
+    row.innerHTML = '<span class="nm">' + name + '</span>' +
+      '<span class="bar"><span class="fill"></span></span>' +
+      '<span class="pill">waiting</span>';
+    agentsEl.appendChild(row);
+    return row;
+  });
+  function setStatus(t, live){ statusEl.textContent = t; statusEl.classList.toggle("live", !!live); }
+  function pill(row, t){ row.querySelector(".pill").textContent = t; }
+  function later(ms, fn){ timers.push(setTimeout(fn, ms)); }
+  function reset(){
+    timers.forEach(clearTimeout); timers = [];
+    ovenEl.classList.remove("hot");
+    reportEl.classList.remove("show");
+    for (var i = 0; i < emberEls.length; i++) emberEls[i].classList.remove("lit");
+    agentRows.forEach(function(r){ r.classList.remove("running","done"); pill(r,"waiting"); });
+  }
+  function finish(){
+    setStatus("1 report merged from 10 agents · 0 credentials shared", false);
+    reportEl.classList.add("show");
+    bakeBtn.textContent = "Bake it again";
+    bakeBtn.disabled = false;
+    running = false;
+  }
+  function bake(){
+    if (running) return;
+    running = true; bakeBtn.disabled = true; bakeBtn.textContent = "Baking…";
+    reset();
+    if (reduce) {
+      ovenEl.classList.add("hot");
+      agentRows.forEach(function(r){ r.classList.add("done"); pill(r,"done"); });
+      for (var e = 0; e < emberEls.length; e++) emberEls[e].classList.add("lit");
+      finish();
+      return;
+    }
+    setStatus("Preheating the oven…", true);
+    ovenEl.classList.add("hot");
+    var t = 900;
+    WAVES.forEach(function(wave, wi){
+      later(t, function(){
+        var base = wi * EMBERS_PER_WAVE;
+        for (var k = 0; k < EMBERS_PER_WAVE && base + k < emberEls.length; k++) {
+          emberEls[base + k].classList.add("lit");
+        }
+        setStatus("Wave " + (wi + 1) + "/3 · " + wave.length + " agents running", true);
+        wave.forEach(function(name){
+          var row = agentRows[AGENTS.indexOf(name)];
+          row.classList.add("running"); pill(row,"running");
+        });
+      });
+      t += 1350;
+      later(t, function(){
+        wave.forEach(function(name){
+          var row = agentRows[AGENTS.indexOf(name)];
+          row.classList.remove("running"); row.classList.add("done"); pill(row,"done");
+        });
+      });
+      t += 250;
+    });
+    later(t, function(){ setStatus("Merging reports…", true); });
+    later(t + 800, finish);
+  }
+  bakeBtn.addEventListener("click", bake);
+
+  /* copy quickstart */
+  var copyBtn = document.getElementById("copyBtn");
+  copyBtn.addEventListener("click", function(){
+    var txt = document.getElementById("qs").innerText
+      .replace(/\$ /g, "").replace(/ {2,}# /g, " # ");
+    var done = function(){ copyBtn.textContent = "Copied"; setTimeout(function(){ copyBtn.textContent = "Copy commands"; }, 1600); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(txt).then(done, function(){ copyBtn.textContent = "Copy failed"; });
+    } else {
+      copyBtn.textContent = "Copy failed";
+    }
+  });
+})();
+</script>
+</body>
+</html>
