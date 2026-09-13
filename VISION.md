@@ -21,7 +21,7 @@ Right now the founder has to go to each AI individually — open Kite, open Clau
 
 ## Inspiration (pending)
 
-user flagged a repo from an independent builder with a large library of agents and skills — link incoming. Evaluate it for: reusable agent definitions, skill patterns worth porting, and anything that should become Kite workspace skills.
+A repo from an independent builder was flagged with a large library of agents and skills — link incoming. Evaluate it for: reusable agent definitions, skill patterns worth porting, and anything that should become Kite workspace skills.
 
 ## Near-term tasks
 

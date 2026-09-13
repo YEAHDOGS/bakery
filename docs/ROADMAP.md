@@ -19,7 +19,7 @@
       in, transcript out, with per-agent token/cost accounting in `collect`.
 - [ ] **Swarm resume** — re-attach a supervisor to an existing run id after
       a crash instead of leaving agents orphaned.
-- [ ] **Web dashboard** — tail agent logs in a browser; user checks things
+- [ ] **Web dashboard** — tail agent logs in a browser; the founder checks things
       on his phone, so this should be phone-first.
 - [ ] **Recipe includes** — compose recipes from shared fragments
       (e.g. one fragment per repo in the org).
